@@ -9,8 +9,8 @@ IMPLEMENTATIONS = {
 }
 
 MATRIX_SIZE = 1024
-RUNS = 3
-THREADS = list(range(1, 9))
+RUNS = 1
+THREADS = list(range(1, 5))
 
 def run_benchmark(exe_name, threads, impl_type):
     try:

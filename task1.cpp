@@ -51,7 +51,7 @@ void generateConsistentVector(const std::vector<std::vector<double>>& A,
     }
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[]) {    
     // Check command line arguments
     if (argc != 3) {
         std::cerr << "Usage: " << argv[0] << " <matrix_size> <num_threads>" << std::endl;
