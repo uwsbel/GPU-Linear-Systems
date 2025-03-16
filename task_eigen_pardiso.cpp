@@ -125,11 +125,11 @@ int main(int argc, char* argv[]) {
     mkl_set_num_threads(num_threads);
     
     // Data file paths
-    std::string matrixFile = "data/ancf/16/solve_2002_0_Z.dat";
-    std::string rhsFile = "data/ancf/16/solve_2002_0_rhs.dat";
-    std::string dvFile = "data/ancf/16/solve_2002_0_Dv.dat";
-    std::string dlFile = "data/ancf/16/solve_2002_0_Dl.dat";
-    std::string solnFile = "soln_eigen_pardiso_16.dat";
+    std::string matrixFile = "data/ancf/80/solve_2002_0_Z.dat";
+    std::string rhsFile = "data/ancf/80/solve_2002_0_rhs.dat";
+    std::string dvFile = "data/ancf/80/solve_2002_0_Dv.dat";
+    std::string dlFile = "data/ancf/80/solve_2002_0_Dl.dat";
+    std::string solnFile = "soln_eigen_pardiso_80.dat";
     
     // Read matrix and vectors
     Eigen::SparseMatrix<double> A = readMatrix(matrixFile);
@@ -173,4 +173,4 @@ int main(int argc, char* argv[]) {
     writeVectorToFile(x, solnFile);
     
     return 0;
-} 
+}

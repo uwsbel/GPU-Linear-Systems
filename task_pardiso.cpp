@@ -178,11 +178,11 @@ int main(int argc, char* argv[]) {
     mkl_set_num_threads(num_threads);
     
     // Data file paths
-    std::string matrixFile = "data/ancf/16/solve_2002_0_Z.dat";
-    std::string rhsFile = "data/ancf/16/solve_2002_0_rhs.dat";
-    std::string dvFile = "data/ancf/16/solve_2002_0_Dv.dat";
-    std::string dlFile = "data/ancf/16/solve_2002_0_Dl.dat";
-    std::string solnFile = "soln_pardiso_16.dat";
+    std::string matrixFile = "data/ancf/80/solve_2002_0_Z.dat";
+    std::string rhsFile = "data/ancf/80/solve_2002_0_rhs.dat";
+    std::string dvFile = "data/ancf/80/solve_2002_0_Dv.dat";
+    std::string dlFile = "data/ancf/80/solve_2002_0_Dl.dat";
+    std::string solnFile = "soln_pardiso_80.dat";
     
     // Read matrix in CSR format
     std::vector<double> values;     // Non-zero values
@@ -236,7 +236,7 @@ int main(int argc, char* argv[]) {
     iparm[7] = 0;             // Max numbers of iterative refinement steps
     iparm[9] = 13;            // Perturb the pivot elements with 1E-13
     iparm[10] = 1;            // Use nonsymmetric permutation and scaling MPS
-    iparm[12] = 0;            // Maximum weighted matching algorithm is switched-off (default for symmetric)
+    iparm[12] = 1;            // Maximum weighted matching algorithm is switched-off (default for symmetric)
     iparm[17] = -1;           // Output: Number of nonzeros in the factor LU
     iparm[18] = -1;           // Output: Mflops for LU factorization
     iparm[19] = 0;            // Output: Numbers of CG Iterations
@@ -277,4 +277,4 @@ int main(int argc, char* argv[]) {
             NULL, &nrhs, iparm, &msglvl, b.data(), x.data(), &error);
     
     return 0;
-} 
+}

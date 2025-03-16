@@ -131,26 +131,31 @@ std::vector<double> readVector(const std::string& filename) {
     while (file >> value) {
         values.push_back(value);
     }
-    
+        
+    // Check if we read anything
+    if (values.empty()) {
+        std::cerr << "Warning: No data read from " << filename << std::endl;
+    }
+
     file.close();
     return values;
 }
 
-// Function to read known solution from two files and combine them
+// Function to read the known solution (combining Dl and Dv)
 std::vector<double> readKnownSolution(const std::string& dvFilename, const std::string& dlFilename) {
-    std::vector<double> dv = readVector(dvFilename);
-    std::vector<double> dl = readVector(dlFilename);
+    std::vector<double> dvPart = readVector(dvFilename);
+    std::vector<double> dlPart = readVector(dlFilename);
     
     // Negate dlPart before combining
-    for (auto& val : dl) {
+    for (auto& val : dlPart) {
         val = -val;
     }
     
     // Create combined vector
     std::vector<double> solution;
-    solution.reserve(dv.size() + dl.size());
-    solution.insert(solution.end(), dv.begin(), dv.end());
-    solution.insert(solution.end(), dl.begin(), dl.end());
+    solution.reserve(dvPart.size() + dlPart.size());
+    solution.insert(solution.end(), dvPart.begin(), dvPart.end());
+    solution.insert(solution.end(), dlPart.begin(), dlPart.end());
     
     return solution;
 }
@@ -162,33 +167,37 @@ void writeVectorToFile(const std::vector<double>& vector, const std::string& fil
         std::cerr << "Error: Could not open file " << filename << " for writing" << std::endl;
         exit(1);
     }
-    
-    for (const auto& val : vector) {
-        file << val << std::endl;
+
+    // Set precision for output
+    file.precision(16);
+    file << std::scientific;
+
+    // Write each element on a new line
+    for (size_t i = 0; i < vector.size(); i++) {
+        file << vector[i] << std::endl;
     }
     
     file.close();
+        std::cout << "Solution written to " << filename << std::endl;
 }
 
-// Function to calculate relative error between computed and reference solutions
+// Calculate relative error between two vectors
 double calculateRelativeError(const std::vector<double>& computed, const std::vector<double>& reference) {
     if (computed.size() != reference.size()) {
-        std::cerr << "Error: Solution vectors have different sizes" << std::endl;
-        exit(1);
+        std::cerr << "Error: Vector sizes don't match for error calculation" << std::endl;
+        return -1.0;
     }
     
-    double error_norm = 0.0;
-    double ref_norm = 0.0;
+    double norm_diff = 0.0;
+    double norm_ref = 0.0;
     
     for (size_t i = 0; i < computed.size(); i++) {
-        error_norm += (computed[i] - reference[i]) * (computed[i] - reference[i]);
-        ref_norm += reference[i] * reference[i];
+        double diff = computed[i] - reference[i];
+        norm_diff += diff * diff;
+        norm_ref += reference[i] * reference[i];
     }
     
-    error_norm = std::sqrt(error_norm);
-    ref_norm = std::sqrt(ref_norm);
-    
-    return error_norm / ref_norm;
+    return std::sqrt(norm_diff) / std::sqrt(norm_ref);
 }
 
 int main(int argc, char* argv[]) {
@@ -202,11 +211,11 @@ int main(int argc, char* argv[]) {
     std::cout << "Using GPU device: " << prop.name << std::endl;
     
     // File paths
-    std::string matrixFile = "data/ancf/16/solve_2002_0_Z.dat";
-    std::string rhsFile = "data/ancf/16/solve_2002_0_rhs.dat";
-    std::string dvFile = "data/ancf/16/solve_2002_0_Dv.dat";
-    std::string dlFile = "data/ancf/16/solve_2002_0_Dl.dat";
-    std::string outputFile = "soln_cusolver_16.dat";
+    std::string matrixFile = "data/ancf/80/solve_2002_0_Z.dat";
+    std::string rhsFile = "data/ancf/80/solve_2002_0_rhs.dat";
+    std::string dvFile = "data/ancf/80/solve_2002_0_Dv.dat";
+    std::string dlFile = "data/ancf/80/solve_2002_0_Dl.dat";
+    std::string outputFile = "soln_cusolver_80.dat";
     
     // Read matrix in CSR format
     std::vector<double> csrValues;
@@ -284,10 +293,10 @@ int main(int argc, char* argv[]) {
     
     // LU factorization with partial pivoting (host version)
     // Needs to be updated
-    CHECK_CUSOLVER(cusolverSpDcsrlsvqr(
+    CHECK_CUSOLVER(cusolverSpDcsrlsvlu(
         cusolverHandle, n, csrValues.size(),
         matDescr, d_csrValues, d_csrRowPtr, d_csrColInd,  // DEVICE pointers
-        d_rhs, 0, // tolerance
+        d_rhs, 1e-12, // tolerance
         1,  // reorder = 1 means use symrcm reordering
         d_solution, &singularity));  // DEVICE solution vector
 
