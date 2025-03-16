@@ -3,6 +3,8 @@ build/
 bin/
 out/
 cmake-build-*/
+soln_*dat
+benchmark_results.png
 
 # Compiled Object files
 *.o
