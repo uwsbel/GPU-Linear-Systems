@@ -202,11 +202,11 @@ int main(int argc, char* argv[]) {
     std::cout << "Using GPU device: " << prop.name << std::endl;
     
     // File paths
-    std::string matrixFile = "data/ancf/solve_2002_0_Z.dat";
-    std::string rhsFile = "data/ancf/solve_2002_0_rhs.dat";
-    std::string dvFile = "data/ancf/solve_2002_0_Dv.dat";
-    std::string dlFile = "data/ancf/solve_2002_0_Dl.dat";
-    std::string outputFile = "soln_cusolver.dat";
+    std::string matrixFile = "data/ancf/16/solve_2002_0_Z.dat";
+    std::string rhsFile = "data/ancf/16/solve_2002_0_rhs.dat";
+    std::string dvFile = "data/ancf/16/solve_2002_0_Dv.dat";
+    std::string dlFile = "data/ancf/16/solve_2002_0_Dl.dat";
+    std::string outputFile = "soln_cusolver_16.dat";
     
     // Read matrix in CSR format
     std::vector<double> csrValues;
