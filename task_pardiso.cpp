@@ -224,24 +224,34 @@ int main(int argc, char* argv[]) {
     MKL_INT error = 0;        // Error indicator
     MKL_INT phase;            // Phase of calculation
     
-    // Initialize PARDISO
-    pardisoinit(pt, &mtype, iparm);
-    
-    // Configure PARDISO
-    iparm[0] = 1;             // No solver default
-    iparm[1] = 2;             // Fill-in reordering from METIS
-    iparm[3] = 0;             // No iterative-direct algorithm
-    iparm[4] = 0;             // No user fill-in reducing permutation
-    iparm[5] = 0;             // Write solution into x
-    iparm[7] = 0;             // Max numbers of iterative refinement steps
-    iparm[9] = 13;            // Perturb the pivot elements with 1E-13
-    iparm[10] = 1;            // Use nonsymmetric permutation and scaling MPS
-    iparm[12] = 1;            // Maximum weighted matching algorithm is switched-off (default for symmetric)
-    iparm[17] = -1;           // Output: Number of nonzeros in the factor LU
-    iparm[18] = -1;           // Output: Mflops for LU factorization
-    iparm[19] = 0;            // Output: Numbers of CG Iterations
-    iparm[34] = 1;            // Zero-based indexing
-    
+    bool symmetric = std::abs(mtype) < 10;
+    iparm[0] = 1;   // No solver default
+    iparm[1] = 2;   // use Metis for the ordering
+    iparm[2] = 0;   // Reserved. Set to zero.
+    iparm[3] = 0;   // No iterative-direct algorithm
+    iparm[4] = 0;   // No user fill-in reducing permutation
+    iparm[5] = 0;   // Write solution into x, b is left unchanged
+    iparm[6] = 0;   // Not in use
+    iparm[7] = 2;   // Max numbers of iterative refinement steps
+    iparm[8] = 0;   // Not in use
+    iparm[9] = 13;  // Perturb the pivot elements with 1E-13
+    iparm[10] = symmetric ? 0 : 1; // Use nonsymmetric permutation and scaling MPS
+    iparm[11] = 0;  // Not in use
+    iparm[12] = symmetric ? 0 : 1;  // Maximum weighted matching algorithm is switched-off (default for symmetric).
+    iparm[13] = 0;  // Output: Number of perturbed pivots
+    iparm[14] = 0;  // Not in use
+    iparm[15] = 0;  // Not in use
+    iparm[16] = 0;  // Not in use
+    iparm[17] = -1; // Output: Number of nonzeros in the factor LU
+    iparm[18] = -1; // Output: Mflops for LU factorization
+    iparm[19] = 0;  // Output: Numbers of CG Iterations
+    iparm[20] = 0;  // 1x1 pivoting
+    iparm[26] = 0;  // No matrix checker
+    iparm[27] = (sizeof(double) == 4) ? 1 : 0;
+    iparm[34] = 1;  // C indexing
+    iparm[36] = 0;  // CSR
+    iparm[59] = 0;  // 0 - In-Core ; 1 - Automatic switch between In-Core and Out-of-Core modes ; 2 - Out-of-Core
+
     // Measure execution time
     auto start = std::chrono::high_resolution_clock::now();
     

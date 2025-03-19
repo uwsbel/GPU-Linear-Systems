@@ -40,6 +40,7 @@ file(COPY ${CMAKE_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})
 add_executable(task_eigen_pardiso task_eigen_pardiso.cpp)
 add_executable(task_pardiso task_pardiso.cpp)
 add_executable(task_cusolver task_cusolver.cu)
+add_executable(task_cudss task_cudss.cu)
 
 # Configure CPU-based targets
 foreach(TARGET task_eigen_pardiso task_pardiso)
@@ -59,8 +60,23 @@ target_link_libraries(task_cusolver PRIVATE
     CUDA::cudart
 )
 
+# Configure CUDA DSS target
+target_include_directories(task_cudss PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+target_link_libraries(task_cudss PRIVATE
+    CUDA::cudss
+    CUDA::cusparse
+    CUDA::cublas
+    CUDA::cudart
+)
+
 # Add compile definitions for CUDA version
 target_compile_definitions(task_cusolver PRIVATE
+    CUDA_VERSION_MAJOR=${CMAKE_CUDA_COMPILER_VERSION_MAJOR}
+    CUDA_VERSION_MINOR=${CMAKE_CUDA_COMPILER_VERSION_MINOR}
+)
+
+# Add compile definitions for CUDA version to cuDSS target
+target_compile_definitions(task_cudss PRIVATE
     CUDA_VERSION_MAJOR=${CMAKE_CUDA_COMPILER_VERSION_MAJOR}
     CUDA_VERSION_MINOR=${CMAKE_CUDA_COMPILER_VERSION_MINOR}
 )
