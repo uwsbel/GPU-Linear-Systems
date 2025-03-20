@@ -293,7 +293,7 @@ int main(int argc, char* argv[]) {
     
     // LU factorization with partial pivoting (host version)
     // Needs to be updated
-    CHECK_CUSOLVER(cusolverSpDcsrlsvlu(
+    CHECK_CUSOLVER(cusolverSpDcsrlsvqr(
         cusolverHandle, n, csrValues.size(),
         matDescr, d_csrValues, d_csrRowPtr, d_csrColInd,  // DEVICE pointers
         d_rhs, 1e-12, // tolerance
