@@ -28,12 +28,15 @@ set(MKL_ROOT "/opt/intel/oneapi/mkl/latest" CACHE PATH "Path to MKL root directo
 set(MKL_INCLUDE_DIR "${MKL_ROOT}/include")
 set(MKL_LIB_DIR "${MKL_ROOT}/lib/intel64")
 
+# Set IOMP5 library path
+set(IOMP5_LIB "/opt/intel/oneapi/compiler/2024.2/lib/libiomp5.so" CACHE FILEPATH "Path to Intel OpenMP Runtime Library (libiomp5.so)")
+
 # Define MKL libraries once
 set(MKL_LIBRARIES
     ${MKL_LIB_DIR}/libmkl_intel_lp64.so
     ${MKL_LIB_DIR}/libmkl_intel_thread.so
     ${MKL_LIB_DIR}/libmkl_core.so
-    -liomp5
+    ${IOMP5_LIB}
 )
 
 # Copy data directory to build directory
