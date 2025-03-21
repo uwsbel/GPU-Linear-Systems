@@ -101,10 +101,6 @@
     } while (0);
 
 int main(int argc, char* argv[]) {
-    printf("---------------------------------------------------------\n");
-    printf("cuDSS example: solving a linear system from file input\n");
-    printf("---------------------------------------------------------\n");
-
     cudssStatus_t status = CUDSS_STATUS_SUCCESS;
     // Check command line arguments
     int num_spokes = 16;  // Default value
@@ -177,6 +173,53 @@ int main(int argc, char* argv[]) {
     CUDSS_CALL_AND_CHECK(cudssConfigCreate(&solverConfig), status, "cudssConfigCreate");
     CUDSS_CALL_AND_CHECK(cudssDataCreate(handle, &solverData), status, "cudssDataCreate");
 
+    /* Set Solver Configuration Parameters */
+
+    // Reordering algorithm - https://docs.nvidia.com/cuda/cudss/types.html#cudssalgtype-t-label
+    cudssAlgType_t reorderingAlg = CUDSS_ALG_DEFAULT;  // This uses METIS which is what we use with PARDISO
+    CUDSS_CALL_AND_CHECK(
+        cudssConfigSet(solverConfig, CUDSS_CONFIG_REORDERING_ALG, &reorderingAlg, sizeof(reorderingAlg)), status,
+        "cudssConfigSet for cudssAlgType_t");
+
+    cudssAlgType_t pivotEpsilonAlg = CUDSS_ALG_1;
+    CUDSS_CALL_AND_CHECK(
+        cudssConfigSet(solverConfig, CUDSS_CONFIG_PIVOT_EPSILON_ALG, &pivotEpsilonAlg, sizeof(pivotEpsilonAlg)), status,
+        "cudssConfigSet for cudssAlgType_t");
+
+    int matchingType = 1;  // Switched on for pardiso
+    CUDSS_CALL_AND_CHECK(cudssConfigSet(solverConfig, CUDSS_CONFIG_MATCHING_TYPE, &matchingType, sizeof(matchingType)),
+                         status, "cudssConfigSet for int");
+
+    int modificator = 0;
+    CUDSS_CALL_AND_CHECK(cudssConfigSet(solverConfig, CUDSS_CONFIG_SOLVE_MODE, &modificator, sizeof(modificator)),
+                         status, "cudssConfigSet for int");
+
+    int iterRefinement = 0;  // Increasing this increases relative error
+    CUDSS_CALL_AND_CHECK(cudssConfigSet(solverConfig, CUDSS_CONFIG_IR_N_STEPS, &iterRefinement, sizeof(iterRefinement)),
+                         status, "cudssConfigSet for int");
+
+    // Skipping CUDSS_CONFIG_IR_N_TOL -> Ignored
+
+    cudssPivotType_t pivotType = CUDSS_PIVOT_COL;  // Leaving at default - can't find what pardiso uses
+    CUDSS_CALL_AND_CHECK(cudssConfigSet(solverConfig, CUDSS_CONFIG_PIVOT_TYPE, &pivotType, sizeof(pivotType)), status,
+                         "cudssConfigSet for cudssPivotType_t");
+
+    double pivotThreshold = 1;  // Matching Pardiso
+    CUDSS_CALL_AND_CHECK(
+        cudssConfigSet(solverConfig, CUDSS_CONFIG_PIVOT_THRESHOLD, &pivotThreshold, sizeof(pivotThreshold)), status,
+        "cudssConfigSet for double");
+
+    // Skipping CUDSS_CONFIG_PIVOT_EPSILON and CUDSS_CONFIG_MAX_LU_NZZ -> leaving at default
+    // Skipping CUDSS_CONFIG_HYBRID_MODE -> Leaving hybrid memory mode OFF
+    // Skipping CUDSS_CONFIG_HYBRID_DEVICE_MEMORY_LIMIT -> Uses internal heuristic
+    // Skipping CUDSS_CONFIG_USE_CUDA_REGISTER_MEMORY -> Deafult good
+    // Skipping CUDSS_CONFIG_HOST_NTHREADS -> Uses max threads by default
+
+    int hybridExecuteMode = 0;  // No CPU for now
+    CUDSS_CALL_AND_CHECK(
+        cudssConfigSet(solverConfig, CUDSS_CONFIG_HYBRID_EXECUTE_MODE, &hybridExecuteMode, sizeof(hybridExecuteMode)),
+        status, "cudssConfigSet for int");
+
     /* Create matrix objects for the right-hand side b and solution x (as dense matrices). */
     cudssMatrix_t x, b;
 
@@ -190,8 +233,8 @@ int main(int argc, char* argv[]) {
 
     /* Create a matrix object for the sparse input matrix. */
     cudssMatrix_t A;
-    cudssMatrixType_t mtype = CUDSS_MTYPE_GENERAL;  // Using general matrix type
-    cudssMatrixViewType_t mview = CUDSS_MVIEW_FULL;
+    cudssMatrixType_t mtype = CUDSS_MTYPE_SYMMETRIC;  // Using general matrix type
+    cudssMatrixViewType_t mview = CUDSS_MVIEW_UPPER;
     cudssIndexBase_t base = CUDSS_BASE_ZERO;
     CUDSS_CALL_AND_CHECK(cudssMatrixCreateCsr(&A, nrows, ncols, nnz, csr_offsets_d, NULL, csr_columns_d, csr_values_d,
                                               CUDA_R_32I, CUDA_R_64F, mtype, mview, base),
@@ -239,6 +282,47 @@ int main(int argc, char* argv[]) {
     std::vector<double> x_values_h(n, 0.0);
     CUDA_CALL_AND_CHECK(cudaMemcpy(x_values_h.data(), x_values_d, nrhs * n * sizeof(double), cudaMemcpyDeviceToHost),
                         "cudaMemcpy for x_values");
+
+    // Print solver data
+    printf("\n=== Solver Statistics ===\n");
+
+    // Get device-side status info
+    int info = 0;
+    CUDSS_CALL_AND_CHECK(cudssDataGet(handle, solverData, CUDSS_DATA_INFO, &info, sizeof(info), NULL), status,
+                         "cudssDataGet for CUDSS_DATA_INFO");
+    printf("CUDSS_DATA_INFO: %d\n", info);
+
+    // Get number of non-zeros in LU factors
+    int64_t lu_nnz = 0;
+    CUDSS_CALL_AND_CHECK(cudssDataGet(handle, solverData, CUDSS_DATA_LU_NNZ, &lu_nnz, sizeof(lu_nnz), NULL), status,
+                         "cudssDataGet for CUDSS_DATA_LU_NNZ");
+    printf("Number of non-zeros in LU factors: %lld\n", (long long)lu_nnz);
+
+    // // Get inertia (number of positive, negative, and zero eigenvalues)
+    // int inertia[3] = {0};
+    // CUDSS_CALL_AND_CHECK(cudssDataGet(handle, solverData, CUDSS_DATA_INERTIA, inertia, sizeof(inertia), NULL),
+    // status,
+    //                      "cudssDataGet for CUDSS_DATA_INERTIA");
+    // printf("Inertia (pos, neg, zero): %d, %d, %d\n", inertia[0], inertia[1], inertia[2]);
+
+    int numPivots = 0;
+    CUDSS_CALL_AND_CHECK(cudssDataGet(handle, solverData, CUDSS_DATA_NPIVOTS, &numPivots, sizeof(numPivots), NULL),
+                         status, "cudssDataGet for CUDSS_DATA_NPIVOTS");
+    printf("Number of pivots: %lld\n", (long long)numPivots);
+
+    // Get memory usage information
+    int64_t peak_memory[16];
+    CUDSS_CALL_AND_CHECK(
+        cudssDataGet(handle, solverData, CUDSS_DATA_MEMORY_ESTIMATES, peak_memory, sizeof(peak_memory), NULL), status,
+        "cudssDataGet for CUDSS_DATA_PEAK_MEMORY");
+    printf("Permanent device memory: %.3f GB\n", (double)peak_memory[0] / (1024 * 1024 * 1024));
+    printf("Peak device memory: %.3f GB\n", (double)peak_memory[1] / (1024 * 1024 * 1024));
+    printf("Permanent host memory: %.3f GB\n", (double)peak_memory[2] / (1024 * 1024 * 1024));
+    printf("Peak host memory: %.3f GB\n", (double)peak_memory[3] / (1024 * 1024 * 1024));
+    printf("Minimum device memory (hybrid mode): %.3f GB\n", (double)peak_memory[4] / (1024 * 1024 * 1024));
+    printf("Maximum host memory (hybrid mode): %.3f GB\n", (double)peak_memory[5] / (1024 * 1024 * 1024));
+
+    printf("===========================\n\n");
 
     /* Clean up cuDSS resources */
     CUDSS_CALL_AND_CHECK(cudssMatrixDestroy(A), status, "cudssMatrixDestroy for A");
