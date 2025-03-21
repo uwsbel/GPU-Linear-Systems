@@ -53,13 +53,13 @@ int main(int argc, char* argv[]) {
     std::vector<int> columns;    // Column indices
     int n;                       // Matrix dimension
 
-    readMatrixCSR(matrixFile, values, rowIndex, columns, n);
+    readMatrixCSR<double>(matrixFile, values, rowIndex, columns, n);
 
     // Read RHS vector
-    std::vector<double> b = readVector(rhsFile);
+    std::vector<double> b = readVector<double>(rhsFile);
 
     // Read known solution for comparison
-    std::vector<double> knownSolution = readKnownSolution(dvFile, dlFile);
+    std::vector<double> knownSolution = readKnownSolution<double>(dvFile, dlFile);
 
     // Print sizes for debugging
     std::cout << "Matrix A dimensions: " << n << " x " << n << std::endl;
@@ -133,7 +133,7 @@ int main(int argc, char* argv[]) {
     std::chrono::duration<double, std::milli> duration = end - start;
 
     // Calculate error compared to known solution
-    double error_norm = calculateRelativeError(x, knownSolution);
+    double error_norm = calculateRelativeError<double>(x, knownSolution);
 
     // Output first and last elements for verification, plus error
     std::cout << "First element: " << x[0] << std::endl;
@@ -142,7 +142,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Time (ms): " << duration.count() << std::endl;
 
     // Write solution to file
-    writeVectorToFile(x, solnFile);
+    writeVectorToFile<double>(x, solnFile);
 
     // Release memory
     phase = -1;  // Release internal memory

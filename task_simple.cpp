@@ -127,11 +127,11 @@ int main(int argc, char* argv[]) {
     std::vector<int> csr_offsets_h;
     std::vector<int> csr_columns_h;
     int n;
-    readMatrixCSR(matrixFile, csr_values_h, csr_offsets_h, csr_columns_h, n);
+    readMatrixCSR<double>(matrixFile, csr_values_h, csr_offsets_h, csr_columns_h, n);
     int nnz = csr_values_h.size();
     printf("Matrix read from file: dimension = %d x %d, nnz = %d\n", n, n, nnz);
 
-    std::vector<double> b_values_h = readVector(rhsFile);
+    std::vector<double> b_values_h = readVector<double>(rhsFile);
     if (b_values_h.size() != static_cast<size_t>(n)) {
         printf("Error: RHS vector size (%zu) does not match matrix dimension (%d)\n", b_values_h.size(), n);
         return -1;
@@ -259,15 +259,15 @@ int main(int argc, char* argv[]) {
     // Read known solution for error calculation
     std::string dvFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Dv.dat";
     std::string dlFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Dl.dat";
-    std::vector<double> knownSolution = readKnownSolution(dvFile, dlFile);
+    std::vector<double> knownSolution = readKnownSolution<double>(dvFile, dlFile);
 
     // Calculate relative error
-    double relError = calculateRelativeErrorRaw(x_values_h.data(), knownSolution.data(), n);
+    double relError = calculateRelativeErrorRaw<double>(x_values_h.data(), knownSolution.data(), n);
     printf("Relative error: %f\n", relError);
 
     // Write solution to file
     std::string outputFile = "soln_simple_" + std::to_string(num_spokes) + ".dat";
-    writeVectorToFile(x_values_h, outputFile);
+    writeVectorToFile<double>(x_values_h, outputFile);
 
     if (relError > 1e-7) {
         printf("Example FAILED: Relative error too large\n");

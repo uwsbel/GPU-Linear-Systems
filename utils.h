@@ -10,13 +10,13 @@
 
 // Add CUDA compatibility
 #ifdef __CUDACC__
-    #define UTILS_HOST_DEVICE __host__ __device__
-    #define UTILS_HOST __host__
-    #define UTILS_DEVICE __device__
+#define UTILS_HOST_DEVICE __host__ __device__
+#define UTILS_HOST __host__
+#define UTILS_DEVICE __device__
 #else
-    #define UTILS_HOST_DEVICE
-    #define UTILS_HOST
-    #define UTILS_DEVICE
+#define UTILS_HOST_DEVICE
+#define UTILS_HOST
+#define UTILS_DEVICE
 #endif
 
 /**
@@ -28,13 +28,16 @@
  * @param columns Output vector to store the column indices
  * @param n Output parameter to store the matrix dimension
  */
-void readMatrixCSR(const std::string& filename,
-                   std::vector<double>& values,
-                   std::vector<int>& rowIndex,
-                   std::vector<int>& columns,
-                   int& n) {
+template <typename T>
+void readMatrixCSR(const std::string &filename,
+                   std::vector<T> &values,
+                   std::vector<int> &rowIndex,
+                   std::vector<int> &columns,
+                   int &n)
+{
     std::ifstream file(filename);
-    if (!file.is_open()) {
+    if (!file.is_open())
+    {
         std::cerr << "Error: Could not open file " << filename << std::endl;
         exit(1);
     }
@@ -46,7 +49,8 @@ void readMatrixCSR(const std::string& filename,
     int max_row = 0, max_col = 0;
 
     // Read all entries
-    while (file >> row >> col >> value) {
+    while (file >> row >> col >> value)
+    {
         // Convert from 1-based to 0-based indexing if needed
         row--;
         col--;
@@ -62,7 +66,8 @@ void readMatrixCSR(const std::string& filename,
     n = max_row + 1;
 
     // Check if matrix is square
-    if (max_row != max_col) {
+    if (max_row != max_col)
+    {
         std::cerr << "Error: Matrix is not square. Rows: " << max_row + 1 << ", Cols: " << max_col + 1 << std::endl;
         exit(1);
     }
@@ -77,20 +82,22 @@ void readMatrixCSR(const std::string& filename,
 
     // Fill in the CSR arrays
     int current_row = -1;
-    for (size_t i = 0; i < triplets.size(); i++) {
+    for (size_t i = 0; i < triplets.size(); i++)
+    {
         int row = std::get<0>(triplets[i]);
         int col = std::get<1>(triplets[i]);
         double val = std::get<2>(triplets[i]);
 
         // Update row index array
-        while (current_row < row) {
+        while (current_row < row)
+        {
             current_row++;
             rowIndex[current_row] = i;
         }
 
         // Store column index and value
         columns[i] = col;
-        values[i] = val;
+        values[i] = static_cast<T>(val);
     }
 
     // Set the last element of rowIndex
@@ -103,25 +110,30 @@ void readMatrixCSR(const std::string& filename,
  * Reads a vector from a file.
  *
  * @param filename Path to the input file containing vector data
- * @return Vector of double values
+ * @return Vector of values
  */
-std::vector<double> readVector(const std::string& filename) {
+template <typename T>
+std::vector<T> readVector(const std::string &filename)
+{
     std::ifstream file(filename);
-    if (!file.is_open()) {
+    if (!file.is_open())
+    {
         std::cerr << "Error: Could not open file " << filename << std::endl;
         exit(1);
     }
 
-    std::vector<double> values;
+    std::vector<T> values;
     double value;
 
     // Read all values from the file
-    while (file >> value) {
-        values.push_back(value);
+    while (file >> value)
+    {
+        values.push_back(static_cast<T>(value));
     }
 
     // Check if we read anything
-    if (values.empty()) {
+    if (values.empty())
+    {
         std::cerr << "Warning: No data read from " << filename << std::endl;
     }
 
@@ -136,17 +148,20 @@ std::vector<double> readVector(const std::string& filename) {
  * @param dlFilename Path to the Dl file
  * @return Combined solution vector
  */
-std::vector<double> readKnownSolution(const std::string& dvFilename, const std::string& dlFilename) {
-    std::vector<double> dvPart = readVector(dvFilename);
-    std::vector<double> dlPart = readVector(dlFilename);
+template <typename T>
+std::vector<T> readKnownSolution(const std::string &dvFilename, const std::string &dlFilename)
+{
+    std::vector<T> dvPart = readVector<T>(dvFilename);
+    std::vector<T> dlPart = readVector<T>(dlFilename);
 
     // Negate dlPart before combining
-    for (auto& val : dlPart) {
+    for (auto &val : dlPart)
+    {
         val = -val;
     }
 
     // Create combined vector
-    std::vector<double> solution;
+    std::vector<T> solution;
     solution.reserve(dvPart.size() + dlPart.size());
     solution.insert(solution.end(), dvPart.begin(), dvPart.end());
     solution.insert(solution.end(), dlPart.begin(), dlPart.end());
@@ -157,12 +172,15 @@ std::vector<double> readKnownSolution(const std::string& dvFilename, const std::
 /**
  * Writes a vector to a file.
  *
- * @param vector Vector of double values to write
+ * @param vector Vector of values to write
  * @param filename Path to the output file
  */
-void writeVectorToFile(const std::vector<double>& vector, const std::string& filename) {
+template <typename T>
+void writeVectorToFile(const std::vector<T> &vector, const std::string &filename)
+{
     std::ofstream file(filename);
-    if (!file.is_open()) {
+    if (!file.is_open())
+    {
         std::cerr << "Error: Could not open file " << filename << " for writing" << std::endl;
         exit(1);
     }
@@ -172,7 +190,8 @@ void writeVectorToFile(const std::vector<double>& vector, const std::string& fil
     file << std::scientific;
 
     // Write each element on a new line
-    for (size_t i = 0; i < vector.size(); i++) {
+    for (size_t i = 0; i < vector.size(); i++)
+    {
         file << vector[i] << std::endl;
     }
 
@@ -186,20 +205,25 @@ void writeVectorToFile(const std::vector<double>& vector, const std::string& fil
  *
  * @param computed Computed solution vector
  * @param reference Reference solution vector
- * @return Relative error as a double
+ * @return Relative error
  */
+template <typename T>
 UTILS_HOST
-double calculateRelativeError(const std::vector<double>& computed, const std::vector<double>& reference) {
-    if (computed.size() != reference.size()) {
+    T
+    calculateRelativeError(const std::vector<T> &computed, const std::vector<T> &reference)
+{
+    if (computed.size() != reference.size())
+    {
         std::cerr << "Error: Vector sizes don't match for error calculation" << std::endl;
-        return -1.0;
+        return static_cast<T>(-1.0);
     }
 
-    double norm_diff = 0.0;
-    double norm_ref = 0.0;
+    T norm_diff = static_cast<T>(0.0);
+    T norm_ref = static_cast<T>(0.0);
 
-    for (size_t i = 0; i < computed.size(); i++) {
-        double diff = computed[i] - reference[i];
+    for (size_t i = 0; i < computed.size(); i++)
+    {
+        T diff = computed[i] - reference[i];
         norm_diff += diff * diff;
         norm_ref += reference[i] * reference[i];
     }
@@ -214,15 +238,19 @@ double calculateRelativeError(const std::vector<double>& computed, const std::ve
  * @param computed Computed solution array
  * @param reference Reference solution array
  * @param size Size of both arrays
- * @return Relative error as a double
+ * @return Relative error
  */
+template <typename T>
 UTILS_HOST_DEVICE
-double calculateRelativeErrorRaw(const double* computed, const double* reference, int size) {
-    double norm_diff = 0.0;
-    double norm_ref = 0.0;
+    T
+    calculateRelativeErrorRaw(const T *computed, const T *reference, int size)
+{
+    T norm_diff = static_cast<T>(0.0);
+    T norm_ref = static_cast<T>(0.0);
 
-    for (int i = 0; i < size; i++) {
-        double diff = computed[i] - reference[i];
+    for (int i = 0; i < size; i++)
+    {
+        T diff = computed[i] - reference[i];
         norm_diff += diff * diff;
         norm_ref += reference[i] * reference[i];
     }

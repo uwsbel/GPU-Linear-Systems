@@ -47,30 +47,67 @@
         }                                                                \
     }
 
-// Function to read matrix from file in COO format and convert to CSR format is now in utils.h
-// Function to read vector from file is now in utils.h
-// Function to read the known solution (combining Dl and Dv) is now in utils.h
-// Function to write vector to file is now in utils.h
-// Calculate relative error between two vectors is now in utils.h
+// Function to select the appropriate cuSolver function based on data type
+template <typename T>
+cusolverStatus_t cusolverSpTcsrlsvqr(
+    cusolverSpHandle_t handle,
+    int m,
+    int nnz,
+    const cusparseMatDescr_t descrA,
+    const T *csrValA,
+    const int *csrRowPtrA,
+    const int *csrColIndA,
+    const T *b,
+    T tol,
+    int reorder,
+    T *x,
+    int *singularity);
 
-int main(int argc, char *argv[])
+// Template specialization for double
+template <>
+cusolverStatus_t cusolverSpTcsrlsvqr<double>(
+    cusolverSpHandle_t handle,
+    int m,
+    int nnz,
+    const cusparseMatDescr_t descrA,
+    const double *csrValA,
+    const int *csrRowPtrA,
+    const int *csrColIndA,
+    const double *b,
+    double tol,
+    int reorder,
+    double *x,
+    int *singularity)
 {
-    // Check command line arguments for num_spokes (optional with default value of 16)
-    int num_spokes = 16; // Default value
-    if (argc > 1)
-    {
-        num_spokes = std::stoi(argv[1]);
-        if (num_spokes <= 0)
-        {
-            std::cerr << "Error: num_spokes must be a positive integer" << std::endl;
-            return 1;
-        }
-    }
-    else
-    {
-        std::cout << "No num_spokes provided. Using default value = " << num_spokes << std::endl;
-    }
+    return cusolverSpDcsrlsvqr(
+        handle, m, nnz, descrA, csrValA, csrRowPtrA, csrColIndA,
+        b, tol, reorder, x, singularity);
+}
 
+// Template specialization for float
+template <>
+cusolverStatus_t cusolverSpTcsrlsvqr<float>(
+    cusolverSpHandle_t handle,
+    int m,
+    int nnz,
+    const cusparseMatDescr_t descrA,
+    const float *csrValA,
+    const int *csrRowPtrA,
+    const int *csrColIndA,
+    const float *b,
+    float tol,
+    int reorder,
+    float *x,
+    int *singularity)
+{
+    return cusolverSpScsrlsvqr(
+        handle, m, nnz, descrA, csrValA, csrRowPtrA, csrColIndA,
+        b, tol, reorder, x, singularity);
+}
+
+template <typename T>
+int solveLinearSystem(int num_spokes, bool use_double = true)
+{
     // Set CUDA device to 0 (first GPU)
     int deviceId = 0;
     CHECK_CUDA(cudaSetDevice(deviceId));
@@ -79,27 +116,29 @@ int main(int argc, char *argv[])
     cudaDeviceProp prop;
     CHECK_CUDA(cudaGetDeviceProperties(&prop, deviceId));
     std::cout << "Using GPU device: " << prop.name << std::endl;
+    std::cout << "Using " << (use_double ? "double" : "float") << " precision" << std::endl;
 
     // File paths
     std::string matrixFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Z.dat";
     std::string rhsFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_rhs.dat";
     std::string dvFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Dv.dat";
     std::string dlFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Dl.dat";
-    std::string outputFile = "soln_cusolver_" + std::to_string(num_spokes) + ".dat";
+    std::string precision = std::is_same<T, float>::value ? "float" : "double";
+    std::string outputFile = "soln_cusolver_" + precision + "_" + std::to_string(num_spokes) + ".dat";
 
     // Read matrix in CSR format
-    std::vector<double> csrValues;
+    std::vector<T> csrValues;
     std::vector<int> csrRowPtr;
     std::vector<int> csrColInd;
     int n;
 
     std::cout << "Reading matrix from " << matrixFile << std::endl;
-    readMatrixCSR(matrixFile, csrValues, csrRowPtr, csrColInd, n);
+    readMatrixCSR<T>(matrixFile, csrValues, csrRowPtr, csrColInd, n);
     std::cout << "Matrix size: " << n << "x" << n << " with " << csrValues.size() << " non-zero elements" << std::endl;
 
     // Read right-hand side
     std::cout << "Reading RHS from " << rhsFile << std::endl;
-    std::vector<double> rhs = readVector(rhsFile);
+    std::vector<T> rhs = readVector<T>(rhsFile);
     if (rhs.size() != static_cast<size_t>(n))
     {
         std::cerr << "Error: RHS vector size (" << rhs.size()
@@ -109,10 +148,10 @@ int main(int argc, char *argv[])
 
     // Read known solution (for error calculation)
     std::cout << "Reading known solution" << std::endl;
-    std::vector<double> knownSolution = readKnownSolution(dvFile, dlFile);
+    std::vector<T> knownSolution = readKnownSolution<T>(dvFile, dlFile);
 
     // Prepare solution vector
-    std::vector<double> solution(n, 0.0);
+    std::vector<T> solution(n, 0.0);
 
     // Create cuSOLVER and cuSPARSE handles
     cusolverSpHandle_t cusolverHandle = nullptr;
@@ -121,23 +160,23 @@ int main(int argc, char *argv[])
     CHECK_CUSPARSE(cusparseCreate(&cusparseHandle));
 
     // Allocate device memory
-    double *d_csrValues = nullptr;
+    T *d_csrValues = nullptr;
     int *d_csrRowPtr = nullptr;
     int *d_csrColInd = nullptr;
-    double *d_rhs = nullptr;
-    double *d_solution = nullptr;
+    T *d_rhs = nullptr;
+    T *d_solution = nullptr;
 
-    CHECK_CUDA(cudaMalloc((void **)&d_csrValues, csrValues.size() * sizeof(double)));
+    CHECK_CUDA(cudaMalloc((void **)&d_csrValues, csrValues.size() * sizeof(T)));
     CHECK_CUDA(cudaMalloc((void **)&d_csrRowPtr, (n + 1) * sizeof(int)));
     CHECK_CUDA(cudaMalloc((void **)&d_csrColInd, csrColInd.size() * sizeof(int)));
-    CHECK_CUDA(cudaMalloc((void **)&d_rhs, n * sizeof(double)));
-    CHECK_CUDA(cudaMalloc((void **)&d_solution, n * sizeof(double)));
+    CHECK_CUDA(cudaMalloc((void **)&d_rhs, n * sizeof(T)));
+    CHECK_CUDA(cudaMalloc((void **)&d_solution, n * sizeof(T)));
 
     // Copy data to device
-    CHECK_CUDA(cudaMemcpy(d_csrValues, csrValues.data(), csrValues.size() * sizeof(double), cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(d_csrValues, csrValues.data(), csrValues.size() * sizeof(T), cudaMemcpyHostToDevice));
     CHECK_CUDA(cudaMemcpy(d_csrRowPtr, csrRowPtr.data(), (n + 1) * sizeof(int), cudaMemcpyHostToDevice));
     CHECK_CUDA(cudaMemcpy(d_csrColInd, csrColInd.data(), csrColInd.size() * sizeof(int), cudaMemcpyHostToDevice));
-    CHECK_CUDA(cudaMemcpy(d_rhs, rhs.data(), n * sizeof(double), cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(d_rhs, rhs.data(), n * sizeof(T), cudaMemcpyHostToDevice));
 
     // Create matrix descriptor
     cusparseMatDescr_t matDescr = nullptr;
@@ -159,15 +198,11 @@ int main(int argc, char *argv[])
     // Setup for the solver
     int singularity = 0;
 
-    // Create parameter structure for the solver
-    // Using LU factorization as requested
-
-    // LU factorization with partial pivoting (host version)
-    // Needs to be updated
-    CHECK_CUSOLVER(cusolverSpDcsrlsvqr(
+    // Use the template function to call the appropriate solver based on type T
+    CHECK_CUSOLVER(cusolverSpTcsrlsvqr<T>(
         cusolverHandle, n, csrValues.size(),
         matDescr, d_csrValues, d_csrRowPtr, d_csrColInd, // DEVICE pointers
-        d_rhs, 1e-12,                                    // tolerance
+        d_rhs, static_cast<T>(1e-12),                    // tolerance
         1,                                               // reorder = 1 means use symrcm reordering
         d_solution, &singularity));                      // DEVICE solution vector
 
@@ -179,8 +214,7 @@ int main(int argc, char *argv[])
     float milliseconds = 0;
     CHECK_CUDA(cudaEventElapsedTime(&milliseconds, start, stop));
 
-    // Copy solution back to host
-    CHECK_CUDA(cudaMemcpy(solution.data(), d_solution, n * sizeof(double), cudaMemcpyDeviceToHost));
+    CHECK_CUDA(cudaMemcpy(solution.data(), d_solution, n * sizeof(T), cudaMemcpyDeviceToHost));
 
     // Check for singularity
     if (singularity >= 0)
@@ -189,14 +223,14 @@ int main(int argc, char *argv[])
     }
 
     // Calculate relative error
-    double relError = calculateRelativeErrorRaw(solution.data(), knownSolution.data(), n);
+    T relError = calculateRelativeErrorRaw<T>(solution.data(), knownSolution.data(), n);
 
     // Output results
     std::cout << "Time to solve: " << milliseconds << " ms" << std::endl;
     std::cout << "Relative error: " << relError << std::endl;
 
     // Write solution to file
-    writeVectorToFile(solution, outputFile);
+    writeVectorToFile<T>(solution, outputFile);
     std::cout << "Solution written to " << outputFile << std::endl;
 
     // Clean up CUDA events
@@ -208,6 +242,7 @@ int main(int argc, char *argv[])
     CHECK_CUSOLVER(cusolverSpDestroy(cusolverHandle));
     CHECK_CUSPARSE(cusparseDestroy(cusparseHandle));
 
+    // Free device memory
     CHECK_CUDA(cudaFree(d_csrValues));
     CHECK_CUDA(cudaFree(d_csrRowPtr));
     CHECK_CUDA(cudaFree(d_csrColInd));
@@ -215,4 +250,76 @@ int main(int argc, char *argv[])
     CHECK_CUDA(cudaFree(d_solution));
 
     return 0;
+}
+
+void printUsage(const char *programName)
+{
+    std::cerr << "Usage: " << programName << " [num_spokes] [options]" << std::endl;
+    std::cerr << "Options:" << std::endl;
+    std::cerr << "  -f, --float    Use single precision (float)" << std::endl;
+    std::cerr << "  -d, --double   Use double precision (default)" << std::endl;
+    std::cerr << "Example: " << programName << " 32 --float" << std::endl;
+}
+
+int main(int argc, char *argv[])
+{
+    // Check command line arguments for num_spokes (optional with default value of 16)
+    int num_spokes = 16;    // Default value
+    bool use_double = true; // Default to double precision
+    bool custom_spokes = false;
+
+    // Parse command line arguments
+    for (int i = 1; i < argc; i++)
+    {
+        std::string arg = argv[i];
+        if (arg == "--float" || arg == "-f")
+        {
+            use_double = false;
+        }
+        else if (arg == "--double" || arg == "-d")
+        {
+            use_double = true;
+        }
+        else if (arg == "--help" || arg == "-h")
+        {
+            printUsage(argv[0]);
+            return 0;
+        }
+        else
+        {
+            // Assume this is the num_spokes value
+            try
+            {
+                num_spokes = std::stoi(arg);
+                if (num_spokes <= 0)
+                {
+                    std::cerr << "Error: num_spokes must be a positive integer" << std::endl;
+                    printUsage(argv[0]);
+                    return 1;
+                }
+                custom_spokes = true;
+            }
+            catch (...)
+            {
+                std::cerr << "Error: Invalid argument: " << arg << std::endl;
+                printUsage(argv[0]);
+                return 1;
+            }
+        }
+    }
+
+    if (!custom_spokes)
+    {
+        std::cout << "No num_spokes provided. Using default value = " << num_spokes << std::endl;
+    }
+
+    // Call the appropriate solver based on precision flag
+    if (use_double)
+    {
+        return solveLinearSystem<double>(num_spokes, true);
+    }
+    else
+    {
+        return solveLinearSystem<float>(num_spokes, false);
+    }
 }

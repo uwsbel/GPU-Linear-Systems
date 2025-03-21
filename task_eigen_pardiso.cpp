@@ -20,7 +20,7 @@ Eigen::SparseMatrix<double> readMatrix(const std::string& filename) {
     std::vector<int> rowIndex;
     std::vector<int> columns;
     int n;
-    readMatrixCSR(filename, values, rowIndex, columns, n);
+    readMatrixCSR<double>(filename, values, rowIndex, columns, n);
 
     // Convert to Eigen format using triplets
     std::vector<Eigen::Triplet<double>> tripletList;
@@ -55,7 +55,7 @@ Eigen::VectorXd vectorToEigen(const std::vector<double>& vec) {
  * Uses the utility function from utils.h
  */
 Eigen::VectorXd readVectorEigen(const std::string& filename) {
-    std::vector<double> vec = readVector(filename);
+    std::vector<double> vec = readVector<double>(filename);
     return vectorToEigen(vec);
 }
 
@@ -63,16 +63,16 @@ Eigen::VectorXd readVectorEigen(const std::string& filename) {
  * Reads the known solution using utils.h and converts to Eigen vector
  */
 Eigen::VectorXd readKnownSolutionEigen(const std::string& dvFilename, const std::string& dlFilename) {
-    std::vector<double> sol = readKnownSolution(dvFilename, dlFilename);
+    std::vector<double> sol = readKnownSolution<double>(dvFilename, dlFilename);
     return vectorToEigen(sol);
 }
 
 /**
  * Writes an Eigen vector to a file
  */
-void writeVectorToFile(const Eigen::VectorXd& vector, const std::string& filename) {
+void writeEigenVectorToFile(const Eigen::VectorXd& vector, const std::string& filename) {
     std::vector<double> vec(vector.data(), vector.data() + vector.size());
-    writeVectorToFile(vec, filename);
+    writeVectorToFile<double>(vec, filename);
 }
 
 int main(int argc, char* argv[]) {
@@ -152,7 +152,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Time (ms): " << duration.count() << std::endl;
 
     // Write solution to file
-    writeVectorToFile(x, solnFile);
+    writeEigenVectorToFile(x, solnFile);
 
     return 0;
 }
