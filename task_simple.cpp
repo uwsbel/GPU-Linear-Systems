@@ -53,15 +53,13 @@
 #include <cuda_runtime.h>
 
 #include "cudss.h"
+#include "utils.h"
 
-// Added includes for file I/O and STL containers
+// Added includes for STL containers
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <string>
-#include <tuple>
-#include <algorithm>
-#include <cmath>
 
 /*
     This example demonstrates basic usage of cuDSS APIs for solving
@@ -101,125 +99,6 @@
             return -2;                                                                                               \
         }                                                                                                            \
     } while (0);
-
-// Helper function to read a matrix in CSR format from a file (input in COO format)
-void readMatrixCSR(const std::string& filename,
-                   std::vector<double>& values,
-                   std::vector<int>& rowIndex,
-                   std::vector<int>& columns,
-                   int& n) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << std::endl;
-        exit(1);
-    }
-    std::vector<std::tuple<int, int, double>> triplets;
-    int row, col;
-    double val;
-    int max_row = 0, max_col = 0;
-    while (file >> row >> col >> val) {
-        // Convert from 1-based to 0-based indexing
-        row--;
-        col--;
-        max_row = std::max(max_row, row);
-        max_col = std::max(max_col, col);
-        triplets.push_back(std::make_tuple(row, col, val));
-    }
-    file.close();
-    n = max_row + 1;
-    if (max_row != max_col) {
-        std::cerr << "Error: Matrix is not square." << std::endl;
-        exit(1);
-    }
-    std::sort(triplets.begin(), triplets.end());
-    values.resize(triplets.size());
-    columns.resize(triplets.size());
-    rowIndex.resize(n + 1, 0);
-    int current_row = -1;
-    for (size_t i = 0; i < triplets.size(); i++) {
-        int r = std::get<0>(triplets[i]);
-        int c = std::get<1>(triplets[i]);
-        double v = std::get<2>(triplets[i]);
-        while (current_row < r) {
-            current_row++;
-            rowIndex[current_row] = i;
-        }
-        columns[i] = c;
-        values[i] = v;
-    }
-    rowIndex[n] = triplets.size();
-}
-
-// Helper function to read a vector from a file
-std::vector<double> readVector(const std::string& filename) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open vector file " << filename << std::endl;
-        exit(1);
-    }
-    std::vector<double> vec;
-    double v;
-    while (file >> v)
-        vec.push_back(v);
-    file.close();
-    return vec;
-}
-
-// Function to calculate relative error between two vectors
-double calculateRelativeError(const std::vector<double>& computed, const std::vector<double>& reference) {
-    if (computed.size() != reference.size()) {
-        std::cerr << "Error: Vector sizes don't match for error calculation" << std::endl;
-        return -1.0;
-    }
-    double norm_diff = 0.0;
-    double norm_ref = 0.0;
-    for (size_t i = 0; i < computed.size(); i++) {
-        double diff = computed[i] - reference[i];
-        norm_diff += diff * diff;
-        norm_ref += reference[i] * reference[i];
-    }
-    return std::sqrt(norm_diff) / std::sqrt(norm_ref);
-}
-
-// Function to write vector to file
-void writeVectorToFile(const std::vector<double>& vector, const std::string& filename) {
-    std::ofstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << " for writing" << std::endl;
-        exit(1);
-    }
-
-    // Set precision for output
-    file.precision(16);
-    file << std::scientific;
-
-    // Write each element on a new line
-    for (size_t i = 0; i < vector.size(); i++) {
-        file << vector[i] << std::endl;
-    }
-
-    file.close();
-    std::cout << "Solution written to " << filename << std::endl;
-}
-
-// Function to read the known solution (combining Dl and Dv)
-std::vector<double> readKnownSolution(const std::string& dvFilename, const std::string& dlFilename) {
-    std::vector<double> dvPart = readVector(dvFilename);
-    std::vector<double> dlPart = readVector(dlFilename);
-
-    // Negate dlPart before combining
-    for (auto& val : dlPart) {
-        val = -val;
-    }
-
-    // Create combined vector
-    std::vector<double> solution;
-    solution.reserve(dvPart.size() + dlPart.size());
-    solution.insert(solution.end(), dvPart.begin(), dvPart.end());
-    solution.insert(solution.end(), dlPart.begin(), dlPart.end());
-
-    return solution;
-}
 
 int main(int argc, char* argv[]) {
     printf("---------------------------------------------------------\n");
@@ -383,7 +262,7 @@ int main(int argc, char* argv[]) {
     std::vector<double> knownSolution = readKnownSolution(dvFile, dlFile);
 
     // Calculate relative error
-    double relError = calculateRelativeError(x_values_h, knownSolution);
+    double relError = calculateRelativeErrorRaw(x_values_h.data(), knownSolution.data(), n);
     printf("Relative error: %f\n", relError);
 
     // Write solution to file

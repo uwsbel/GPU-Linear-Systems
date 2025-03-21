@@ -8,108 +8,71 @@
 #include <Eigen/Sparse>
 #include <Eigen/PardisoSupport>
 #include <mkl.h>
+#include "utils.h"
 
-// Function to read matrix from file in COO format
+/**
+ * Reads a matrix from file in COO format and converts it to Eigen sparse format.
+ * Uses the utility functions from utils.h
+ */
 Eigen::SparseMatrix<double> readMatrix(const std::string& filename) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << std::endl;
-        exit(1);
-    }
+    // Read in CSR format first using our utility
+    std::vector<double> values;
+    std::vector<int> rowIndex;
+    std::vector<int> columns;
+    int n;
+    readMatrixCSR(filename, values, rowIndex, columns, n);
 
-    // Read all triplets first to determine matrix size
+    // Convert to Eigen format using triplets
     std::vector<Eigen::Triplet<double>> tripletList;
-    int row, col;
-    double value;
-    int max_row = 0, max_col = 0;
+    tripletList.reserve(values.size());
 
-    // Read all entries
-    while (file >> row >> col >> value) {
-        // Convert from 1-based to 0-based indexing
-        row--;
-        col--;
-
-        // Keep track of matrix dimensions
-        max_row = std::max(max_row, row);
-        max_col = std::max(max_col, col);
-
-        tripletList.emplace_back(row, col, value);
+    // Loop through CSR format and create triplets
+    for (int row = 0; row < n; row++) {
+        for (int j = rowIndex[row]; j < rowIndex[row + 1]; j++) {
+            int col = columns[j];
+            double val = values[j];
+            tripletList.emplace_back(row, col, val);
+        }
     }
-
-    // Matrix dimensions are max indices + 1 (since we converted to 0-based)
-    int rows = max_row + 1;
-    int cols = max_col + 1;
 
     // Initialize and fill the sparse matrix
-    Eigen::SparseMatrix<double, Eigen::RowMajor> matrix(rows, cols);
+    Eigen::SparseMatrix<double, Eigen::RowMajor> matrix(n, n);
     matrix.setFromTriplets(tripletList.begin(), tripletList.end());
     matrix.makeCompressed();
 
-    file.close();
     return matrix;
 }
 
-// Function to read vector from file
-Eigen::VectorXd readVector(const std::string& filename) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << std::endl;
-        exit(1);
-    }
-
-    std::vector<double> values;
-    double value;
-
-    // Read all values from the file
-    while (file >> value) {
-        values.push_back(value);
-    }
-
-    // Check if we read anything
-    if (values.empty()) {
-        std::cerr << "Warning: No data read from " << filename << std::endl;
-    }
-
-    // Convert to Eigen vector
-    Eigen::VectorXd vector = Eigen::Map<Eigen::VectorXd>(values.data(), values.size());
-    file.close();
-    return vector;
+/**
+ * Converts a std::vector to Eigen::VectorXd
+ */
+Eigen::VectorXd vectorToEigen(const std::vector<double>& vec) {
+    return Eigen::Map<const Eigen::VectorXd>(vec.data(), vec.size());
 }
 
-// Function to read the known solution (combining Dl and Dv)
-Eigen::VectorXd readKnownSolution(const std::string& dvFilename, const std::string& dlFilename) {
-    Eigen::VectorXd dvPart = readVector(dvFilename);
-    Eigen::VectorXd dlPart = readVector(dlFilename);
-
-    // Negate dlPart before combining
-    dlPart = -dlPart;
-
-    // Create combined vector
-    Eigen::VectorXd solution(dvPart.size() + dlPart.size());
-    solution << dvPart, dlPart;
-
-    return solution;
+/**
+ * Reads a vector from file and returns it as Eigen::VectorXd.
+ * Uses the utility function from utils.h
+ */
+Eigen::VectorXd readVectorEigen(const std::string& filename) {
+    std::vector<double> vec = readVector(filename);
+    return vectorToEigen(vec);
 }
 
-// Function to write vector to file
+/**
+ * Reads the known solution using utils.h and converts to Eigen vector
+ */
+Eigen::VectorXd readKnownSolutionEigen(const std::string& dvFilename, const std::string& dlFilename) {
+    std::vector<double> sol = readKnownSolution(dvFilename, dlFilename);
+    return vectorToEigen(sol);
+}
+
+/**
+ * Writes an Eigen vector to a file
+ */
 void writeVectorToFile(const Eigen::VectorXd& vector, const std::string& filename) {
-    std::ofstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << " for writing" << std::endl;
-        exit(1);
-    }
-
-    // Set precision for output
-    file.precision(16);
-    file << std::scientific;
-
-    // Write each element on a new line
-    for (int i = 0; i < vector.size(); i++) {
-        file << vector(i) << std::endl;
-    }
-
-    file.close();
-    std::cout << "Solution written to " << filename << std::endl;
+    std::vector<double> vec(vector.data(), vector.data() + vector.size());
+    writeVectorToFile(vec, filename);
 }
 
 int main(int argc, char* argv[]) {
@@ -152,8 +115,8 @@ int main(int argc, char* argv[]) {
 
     // Read matrix and vectors
     Eigen::SparseMatrix<double> A = readMatrix(matrixFile);
-    Eigen::VectorXd b = readVector(rhsFile);
-    Eigen::VectorXd knownSolution = readKnownSolution(dvFile, dlFile);
+    Eigen::VectorXd b = readVectorEigen(rhsFile);
+    Eigen::VectorXd knownSolution = readKnownSolutionEigen(dvFile, dlFile);
 
     // Print sizes for debugging
     std::cout << "Matrix A dimensions: " << A.rows() << " x " << A.cols() << std::endl;
