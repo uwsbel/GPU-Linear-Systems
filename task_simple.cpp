@@ -73,41 +73,40 @@
         x is the (dense) solution vector (or a matrix).
 */
 
-#define CUDSS_EXAMPLE_FREE \
-    do { \
+#define CUDSS_EXAMPLE_FREE       \
+    do {                         \
         cudaFree(csr_offsets_d); \
         cudaFree(csr_columns_d); \
-        cudaFree(csr_values_d); \
-        cudaFree(x_values_d); \
-        cudaFree(b_values_d); \
-    } while(0);
+        cudaFree(csr_values_d);  \
+        cudaFree(x_values_d);    \
+        cudaFree(b_values_d);    \
+    } while (0);
 
-#define CUDA_CALL_AND_CHECK(call, msg) \
-    do { \
-        cudaError_t cuda_error = call; \
-        if (cuda_error != cudaSuccess) { \
+#define CUDA_CALL_AND_CHECK(call, msg)                                                               \
+    do {                                                                                             \
+        cudaError_t cuda_error = call;                                                               \
+        if (cuda_error != cudaSuccess) {                                                             \
             printf("Example FAILED: CUDA API returned error = %d, details: " #msg "\n", cuda_error); \
-            CUDSS_EXAMPLE_FREE; \
-            return -1; \
-        } \
-    } while(0);
+            CUDSS_EXAMPLE_FREE;                                                                      \
+            return -1;                                                                               \
+        }                                                                                            \
+    } while (0);
 
-
-#define CUDSS_CALL_AND_CHECK(call, status, msg) \
-    do { \
-        status = call; \
-        if (status != CUDSS_STATUS_SUCCESS) { \
+#define CUDSS_CALL_AND_CHECK(call, status, msg)                                                                      \
+    do {                                                                                                             \
+        status = call;                                                                                               \
+        if (status != CUDSS_STATUS_SUCCESS) {                                                                        \
             printf("Example FAILED: CUDSS call ended unsuccessfully with status = %d, details: " #msg "\n", status); \
-            CUDSS_EXAMPLE_FREE; \
-            return -2; \
-        } \
-    } while(0);
+            CUDSS_EXAMPLE_FREE;                                                                                      \
+            return -2;                                                                                               \
+        }                                                                                                            \
+    } while (0);
 
 // Helper function to read a matrix in CSR format from a file (input in COO format)
-void readMatrixCSR(const std::string& filename, 
-                   std::vector<double>& values, 
-                   std::vector<int>& rowIndex, 
-                   std::vector<int>& columns, 
+void readMatrixCSR(const std::string& filename,
+                   std::vector<double>& values,
+                   std::vector<int>& rowIndex,
+                   std::vector<int>& columns,
                    int& n) {
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -120,7 +119,8 @@ void readMatrixCSR(const std::string& filename,
     int max_row = 0, max_col = 0;
     while (file >> row >> col >> val) {
         // Convert from 1-based to 0-based indexing
-        row--; col--;
+        row--;
+        col--;
         max_row = std::max(max_row, row);
         max_col = std::max(max_col, col);
         triplets.push_back(std::make_tuple(row, col, val));
@@ -197,40 +197,51 @@ void writeVectorToFile(const std::vector<double>& vector, const std::string& fil
     for (size_t i = 0; i < vector.size(); i++) {
         file << vector[i] << std::endl;
     }
-    
+
     file.close();
-        std::cout << "Solution written to " << filename << std::endl;
+    std::cout << "Solution written to " << filename << std::endl;
 }
 
 // Function to read the known solution (combining Dl and Dv)
 std::vector<double> readKnownSolution(const std::string& dvFilename, const std::string& dlFilename) {
     std::vector<double> dvPart = readVector(dvFilename);
     std::vector<double> dlPart = readVector(dlFilename);
-    
+
     // Negate dlPart before combining
     for (auto& val : dlPart) {
         val = -val;
     }
-    
+
     // Create combined vector
     std::vector<double> solution;
     solution.reserve(dvPart.size() + dlPart.size());
     solution.insert(solution.end(), dvPart.begin(), dvPart.end());
     solution.insert(solution.end(), dlPart.begin(), dlPart.end());
-    
+
     return solution;
 }
 
-int main (int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
     printf("---------------------------------------------------------\n");
     printf("cuDSS example: solving a linear system from file input\n");
     printf("---------------------------------------------------------\n");
 
     cudssStatus_t status = CUDSS_STATUS_SUCCESS;
+    // Check command line arguments
+    int num_spokes = 16;  // Default value
+    if (argc > 1) {
+        num_spokes = atoi(argv[1]);
+        if (num_spokes <= 0) {
+            printf("Error: num_spokes must be a positive integer\n");
+            return -1;
+        }
+    } else {
+        printf("No argument provided. Using default num_spokes = %d\n", num_spokes);
+    }
 
     // Define file paths for the matrix and RHS (modify these paths as needed)
-    std::string matrixFile = "data/ancf/16/solve_2002_0_Z.dat";
-    std::string rhsFile = "data/ancf/16/solve_2002_0_rhs.dat";
+    std::string matrixFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Z.dat";
+    std::string rhsFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_rhs.dat";
 
     // Host containers for CSR data and RHS vector
     std::vector<double> csr_values_h;
@@ -248,9 +259,9 @@ int main (int argc, char *argv[]) {
     }
 
     // Device pointers
-    int *csr_offsets_d = NULL;
-    int *csr_columns_d = NULL;
-    double *csr_values_d = NULL;
+    int* csr_offsets_d = NULL;
+    int* csr_columns_d = NULL;
+    double* csr_values_d = NULL;
     double *x_values_d = NULL, *b_values_d = NULL;
 
     CUDA_CALL_AND_CHECK(cudaMalloc(&csr_offsets_d, (n + 1) * sizeof(int)), "cudaMalloc for csr_offsets_d");
@@ -260,10 +271,14 @@ int main (int argc, char *argv[]) {
     CUDA_CALL_AND_CHECK(cudaMalloc(&x_values_d, n * sizeof(double)), "cudaMalloc for x_values_d");
 
     // Copy host data to device
-    CUDA_CALL_AND_CHECK(cudaMemcpy(csr_offsets_d, csr_offsets_h.data(), (n + 1) * sizeof(int), cudaMemcpyHostToDevice), "cudaMemcpy for csr_offsets_d");
-    CUDA_CALL_AND_CHECK(cudaMemcpy(csr_columns_d, csr_columns_h.data(), nnz * sizeof(int), cudaMemcpyHostToDevice), "cudaMemcpy for csr_columns_d");
-    CUDA_CALL_AND_CHECK(cudaMemcpy(csr_values_d, csr_values_h.data(), nnz * sizeof(double), cudaMemcpyHostToDevice), "cudaMemcpy for csr_values_d");
-    CUDA_CALL_AND_CHECK(cudaMemcpy(b_values_d, b_values_h.data(), n * sizeof(double), cudaMemcpyHostToDevice), "cudaMemcpy for b_values_d");
+    CUDA_CALL_AND_CHECK(cudaMemcpy(csr_offsets_d, csr_offsets_h.data(), (n + 1) * sizeof(int), cudaMemcpyHostToDevice),
+                        "cudaMemcpy for csr_offsets_d");
+    CUDA_CALL_AND_CHECK(cudaMemcpy(csr_columns_d, csr_columns_h.data(), nnz * sizeof(int), cudaMemcpyHostToDevice),
+                        "cudaMemcpy for csr_columns_d");
+    CUDA_CALL_AND_CHECK(cudaMemcpy(csr_values_d, csr_values_h.data(), nnz * sizeof(double), cudaMemcpyHostToDevice),
+                        "cudaMemcpy for csr_values_d");
+    CUDA_CALL_AND_CHECK(cudaMemcpy(b_values_d, b_values_h.data(), n * sizeof(double), cudaMemcpyHostToDevice),
+                        "cudaMemcpy for b_values_d");
 
     // Create a CUDA stream
     cudaStream_t stream = NULL;
@@ -289,19 +304,19 @@ int main (int argc, char *argv[]) {
     int nrhs = 1;
     int64_t nrows = n, ncols = n;
     int ldb = ncols, ldx = nrows;
-    CUDSS_CALL_AND_CHECK(cudssMatrixCreateDn(&b, ncols, nrhs, ldb, b_values_d, CUDA_R_64F,
-                         CUDSS_LAYOUT_COL_MAJOR), status, "cudssMatrixCreateDn for b");
-    CUDSS_CALL_AND_CHECK(cudssMatrixCreateDn(&x, nrows, nrhs, ldx, x_values_d, CUDA_R_64F,
-                         CUDSS_LAYOUT_COL_MAJOR), status, "cudssMatrixCreateDn for x");
+    CUDSS_CALL_AND_CHECK(cudssMatrixCreateDn(&b, ncols, nrhs, ldb, b_values_d, CUDA_R_64F, CUDSS_LAYOUT_COL_MAJOR),
+                         status, "cudssMatrixCreateDn for b");
+    CUDSS_CALL_AND_CHECK(cudssMatrixCreateDn(&x, nrows, nrhs, ldx, x_values_d, CUDA_R_64F, CUDSS_LAYOUT_COL_MAJOR),
+                         status, "cudssMatrixCreateDn for x");
 
     /* Create a matrix object for the sparse input matrix. */
     cudssMatrix_t A;
-    cudssMatrixType_t mtype     = CUDSS_MTYPE_GENERAL;  // Using general matrix type
+    cudssMatrixType_t mtype = CUDSS_MTYPE_GENERAL;  // Using general matrix type
     cudssMatrixViewType_t mview = CUDSS_MVIEW_FULL;
-    cudssIndexBase_t base       = CUDSS_BASE_ZERO;
-    CUDSS_CALL_AND_CHECK(cudssMatrixCreateCsr(&A, nrows, ncols, nnz, csr_offsets_d, NULL,
-                         csr_columns_d, csr_values_d, CUDA_R_32I, CUDA_R_64F, mtype, mview,
-                         base), status, "cudssMatrixCreateCsr");
+    cudssIndexBase_t base = CUDSS_BASE_ZERO;
+    CUDSS_CALL_AND_CHECK(cudssMatrixCreateCsr(&A, nrows, ncols, nnz, csr_offsets_d, NULL, csr_columns_d, csr_values_d,
+                                              CUDA_R_32I, CUDA_R_64F, mtype, mview, base),
+                         status, "cudssMatrixCreateCsr");
 
     // Create CUDA events for timing
     cudaEvent_t start = nullptr, stop = nullptr;
@@ -312,16 +327,16 @@ int main (int argc, char *argv[]) {
     CUDA_CALL_AND_CHECK(cudaEventRecord(start), "cudaEventRecord start");
 
     /* Symbolic factorization */
-    CUDSS_CALL_AND_CHECK(cudssExecute(handle, CUDSS_PHASE_ANALYSIS, solverConfig, solverData,
-                         A, x, b), status, "cudssExecute for analysis");
+    CUDSS_CALL_AND_CHECK(cudssExecute(handle, CUDSS_PHASE_ANALYSIS, solverConfig, solverData, A, x, b), status,
+                         "cudssExecute for analysis");
 
     /* Factorization */
-    CUDSS_CALL_AND_CHECK(cudssExecute(handle, CUDSS_PHASE_FACTORIZATION, solverConfig,
-                         solverData, A, x, b), status, "cudssExecute for factorization");
+    CUDSS_CALL_AND_CHECK(cudssExecute(handle, CUDSS_PHASE_FACTORIZATION, solverConfig, solverData, A, x, b), status,
+                         "cudssExecute for factorization");
 
     /* Solving */
-    CUDSS_CALL_AND_CHECK(cudssExecute(handle, CUDSS_PHASE_SOLVE, solverConfig, solverData,
-                         A, x, b), status, "cudssExecute for solve");
+    CUDSS_CALL_AND_CHECK(cudssExecute(handle, CUDSS_PHASE_SOLVE, solverConfig, solverData, A, x, b), status,
+                         "cudssExecute for solve");
 
     // Stop timing
     CUDA_CALL_AND_CHECK(cudaEventRecord(stop), "cudaEventRecord stop");
@@ -343,9 +358,8 @@ int main (int argc, char *argv[]) {
 
     /* Copy the solution back to host and print the results */
     std::vector<double> x_values_h(n, 0.0);
-    CUDA_CALL_AND_CHECK(cudaMemcpy(x_values_h.data(), x_values_d, nrhs * n * sizeof(double),
-                         cudaMemcpyDeviceToHost), "cudaMemcpy for x_values");
-
+    CUDA_CALL_AND_CHECK(cudaMemcpy(x_values_h.data(), x_values_d, nrhs * n * sizeof(double), cudaMemcpyDeviceToHost),
+                        "cudaMemcpy for x_values");
 
     /* Clean up cuDSS resources */
     CUDSS_CALL_AND_CHECK(cudssMatrixDestroy(A), status, "cudssMatrixDestroy for A");
@@ -364,8 +378,8 @@ int main (int argc, char *argv[]) {
     cudaStreamDestroy(stream);
 
     // Read known solution for error calculation
-    std::string dvFile = "data/ancf/16/solve_2002_0_Dv.dat";
-    std::string dlFile = "data/ancf/16/solve_2002_0_Dl.dat";
+    std::string dvFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Dv.dat";
+    std::string dlFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Dl.dat";
     std::vector<double> knownSolution = readKnownSolution(dvFile, dlFile);
 
     // Calculate relative error
@@ -373,7 +387,7 @@ int main (int argc, char *argv[]) {
     printf("Relative error: %f\n", relError);
 
     // Write solution to file
-    std::string outputFile = "soln_simple_16.dat";
+    std::string outputFile = "soln_simple_" + std::to_string(num_spokes) + ".dat";
     writeVectorToFile(x_values_h, outputFile);
 
     if (relError > 1e-7) {
