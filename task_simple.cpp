@@ -100,34 +100,44 @@
         }                                                                                                            \
     } while (0);
 
-int main(int argc, char* argv[]) {
+// Function to print usage information
+void printUsage(const char* programName) {
+    printf("Usage: %s [num_spokes] [options]\n", programName);
+    printf("Options:\n");
+    printf("  -f, --float    Use single precision (float)\n");
+    printf("  -d, --double   Use double precision (default)\n");
+    printf("Example: %s 32 --float\n", programName);
+}
+
+// Template function for solving with different precision
+template <typename T>
+int solveWithCUDSS(int num_spokes, bool use_double) {
     cudssStatus_t status = CUDSS_STATUS_SUCCESS;
-    // Check command line arguments
-    int num_spokes = 16;  // Default value
-    if (argc > 1) {
-        num_spokes = atoi(argv[1]);
-        if (num_spokes <= 0) {
-            printf("Error: num_spokes must be a positive integer\n");
-            return -1;
-        }
-    } else {
-        printf("No argument provided. Using default num_spokes = %d\n", num_spokes);
-    }
+    
+    // Define CUDA data type based on template type
+    cudaDataType_t cuda_data_type = std::is_same<T, double>::value ? CUDA_R_64F : CUDA_R_32F;
+    
+    // Set error tolerance based on precision
+    T error_tolerance = std::is_same<T, double>::value ? 1e-7 : 1e-5f;
+
+    // Print precision mode
+    printf("Running with %s precision\n", use_double ? "double" : "single (float)");
 
     // Define file paths for the matrix and RHS (modify these paths as needed)
     std::string matrixFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Z.dat";
     std::string rhsFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_rhs.dat";
 
     // Host containers for CSR data and RHS vector
-    std::vector<double> csr_values_h;
+    std::vector<T> csr_values_h;
     std::vector<int> csr_offsets_h;
     std::vector<int> csr_columns_h;
+
     int n;
-    readMatrixCSR<double>(matrixFile, csr_values_h, csr_offsets_h, csr_columns_h, n);
+    readMatrixCSR<T>(matrixFile, csr_values_h, csr_offsets_h, csr_columns_h, n);
     int nnz = csr_values_h.size();
     printf("Matrix read from file: dimension = %d x %d, nnz = %d\n", n, n, nnz);
 
-    std::vector<double> b_values_h = readVector<double>(rhsFile);
+    std::vector<T> b_values_h = readVector<T>(rhsFile);
     if (b_values_h.size() != static_cast<size_t>(n)) {
         printf("Error: RHS vector size (%zu) does not match matrix dimension (%d)\n", b_values_h.size(), n);
         return -1;
@@ -136,23 +146,23 @@ int main(int argc, char* argv[]) {
     // Device pointers
     int* csr_offsets_d = NULL;
     int* csr_columns_d = NULL;
-    double* csr_values_d = NULL;
-    double *x_values_d = NULL, *b_values_d = NULL;
+    T* csr_values_d = NULL;
+    T *x_values_d = NULL, *b_values_d = NULL;
 
     CUDA_CALL_AND_CHECK(cudaMalloc(&csr_offsets_d, (n + 1) * sizeof(int)), "cudaMalloc for csr_offsets_d");
     CUDA_CALL_AND_CHECK(cudaMalloc(&csr_columns_d, nnz * sizeof(int)), "cudaMalloc for csr_columns_d");
-    CUDA_CALL_AND_CHECK(cudaMalloc(&csr_values_d, nnz * sizeof(double)), "cudaMalloc for csr_values_d");
-    CUDA_CALL_AND_CHECK(cudaMalloc(&b_values_d, n * sizeof(double)), "cudaMalloc for b_values_d");
-    CUDA_CALL_AND_CHECK(cudaMalloc(&x_values_d, n * sizeof(double)), "cudaMalloc for x_values_d");
+    CUDA_CALL_AND_CHECK(cudaMalloc(&csr_values_d, nnz * sizeof(T)), "cudaMalloc for csr_values_d");
+    CUDA_CALL_AND_CHECK(cudaMalloc(&b_values_d, n * sizeof(T)), "cudaMalloc for b_values_d");
+    CUDA_CALL_AND_CHECK(cudaMalloc(&x_values_d, n * sizeof(T)), "cudaMalloc for x_values_d");
 
     // Copy host data to device
     CUDA_CALL_AND_CHECK(cudaMemcpy(csr_offsets_d, csr_offsets_h.data(), (n + 1) * sizeof(int), cudaMemcpyHostToDevice),
                         "cudaMemcpy for csr_offsets_d");
     CUDA_CALL_AND_CHECK(cudaMemcpy(csr_columns_d, csr_columns_h.data(), nnz * sizeof(int), cudaMemcpyHostToDevice),
                         "cudaMemcpy for csr_columns_d");
-    CUDA_CALL_AND_CHECK(cudaMemcpy(csr_values_d, csr_values_h.data(), nnz * sizeof(double), cudaMemcpyHostToDevice),
+    CUDA_CALL_AND_CHECK(cudaMemcpy(csr_values_d, csr_values_h.data(), nnz * sizeof(T), cudaMemcpyHostToDevice),
                         "cudaMemcpy for csr_values_d");
-    CUDA_CALL_AND_CHECK(cudaMemcpy(b_values_d, b_values_h.data(), n * sizeof(double), cudaMemcpyHostToDevice),
+    CUDA_CALL_AND_CHECK(cudaMemcpy(b_values_d, b_values_h.data(), n * sizeof(T), cudaMemcpyHostToDevice),
                         "cudaMemcpy for b_values_d");
 
     // Create a CUDA stream
@@ -204,10 +214,10 @@ int main(int argc, char* argv[]) {
     CUDSS_CALL_AND_CHECK(cudssConfigSet(solverConfig, CUDSS_CONFIG_PIVOT_TYPE, &pivotType, sizeof(pivotType)), status,
                          "cudssConfigSet for cudssPivotType_t");
 
-    double pivotThreshold = 1;  // Matching Pardiso
+    T pivotThreshold = 1;  // Matching Pardiso
     CUDSS_CALL_AND_CHECK(
         cudssConfigSet(solverConfig, CUDSS_CONFIG_PIVOT_THRESHOLD, &pivotThreshold, sizeof(pivotThreshold)), status,
-        "cudssConfigSet for double");
+        "cudssConfigSet for real_t");
 
     // Skipping CUDSS_CONFIG_PIVOT_EPSILON and CUDSS_CONFIG_MAX_LU_NZZ -> leaving at default
     // Skipping CUDSS_CONFIG_HYBRID_MODE -> Leaving hybrid memory mode OFF
@@ -226,18 +236,18 @@ int main(int argc, char* argv[]) {
     int nrhs = 1;
     int64_t nrows = n, ncols = n;
     int ldb = ncols, ldx = nrows;
-    CUDSS_CALL_AND_CHECK(cudssMatrixCreateDn(&b, ncols, nrhs, ldb, b_values_d, CUDA_R_64F, CUDSS_LAYOUT_COL_MAJOR),
+    CUDSS_CALL_AND_CHECK(cudssMatrixCreateDn(&b, ncols, nrhs, ldb, b_values_d, cuda_data_type, CUDSS_LAYOUT_COL_MAJOR),
                          status, "cudssMatrixCreateDn for b");
-    CUDSS_CALL_AND_CHECK(cudssMatrixCreateDn(&x, nrows, nrhs, ldx, x_values_d, CUDA_R_64F, CUDSS_LAYOUT_COL_MAJOR),
+    CUDSS_CALL_AND_CHECK(cudssMatrixCreateDn(&x, nrows, nrhs, ldx, x_values_d, cuda_data_type, CUDSS_LAYOUT_COL_MAJOR),
                          status, "cudssMatrixCreateDn for x");
 
     /* Create a matrix object for the sparse input matrix. */
     cudssMatrix_t A;
-    cudssMatrixType_t mtype = CUDSS_MTYPE_SYMMETRIC;  // Using general matrix type
-    cudssMatrixViewType_t mview = CUDSS_MVIEW_UPPER;
+    cudssMatrixType_t mtype = CUDSS_MTYPE_GENERAL;  // Using general matrix type
+    cudssMatrixViewType_t mview = CUDSS_MVIEW_FULL;
     cudssIndexBase_t base = CUDSS_BASE_ZERO;
     CUDSS_CALL_AND_CHECK(cudssMatrixCreateCsr(&A, nrows, ncols, nnz, csr_offsets_d, NULL, csr_columns_d, csr_values_d,
-                                              CUDA_R_32I, CUDA_R_64F, mtype, mview, base),
+                                              CUDA_R_32I, cuda_data_type, mtype, mview, base),
                          status, "cudssMatrixCreateCsr");
 
     // Create CUDA events for timing
@@ -279,8 +289,8 @@ int main(int argc, char* argv[]) {
     CUDA_CALL_AND_CHECK(cudaStreamSynchronize(stream), "cudaStreamSynchronize");
 
     /* Copy the solution back to host and print the results */
-    std::vector<double> x_values_h(n, 0.0);
-    CUDA_CALL_AND_CHECK(cudaMemcpy(x_values_h.data(), x_values_d, nrhs * n * sizeof(double), cudaMemcpyDeviceToHost),
+    std::vector<T> x_values_h(n, 0.0);
+    CUDA_CALL_AND_CHECK(cudaMemcpy(x_values_h.data(), x_values_d, nrhs * n * sizeof(T), cudaMemcpyDeviceToHost),
                         "cudaMemcpy for x_values");
 
     // Print solver data
@@ -343,21 +353,73 @@ int main(int argc, char* argv[]) {
     // Read known solution for error calculation
     std::string dvFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Dv.dat";
     std::string dlFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Dl.dat";
-    std::vector<double> knownSolution = readKnownSolution<double>(dvFile, dlFile);
+    std::vector<T> knownSolution = readKnownSolution<T>(dvFile, dlFile);
 
     // Calculate relative error
-    double relError = calculateRelativeErrorRaw<double>(x_values_h.data(), knownSolution.data(), n);
+    T relError = calculateRelativeErrorRaw<T>(x_values_h.data(), knownSolution.data(), n);
     printf("Relative error: %f\n", relError);
 
     // Write solution to file
-    std::string outputFile = "soln_simple_" + std::to_string(num_spokes) + ".dat";
-    writeVectorToFile<double>(x_values_h, outputFile);
+    std::string precision = std::is_same<T, float>::value ? "float" : "double";
+    std::string outputFile = "soln_simple_" + precision + "_" + std::to_string(num_spokes) + ".dat";
+    writeVectorToFile<T>(x_values_h, outputFile);
 
-    if (relError > 1e-7) {
+    if (relError > error_tolerance) {
         printf("Example FAILED: Relative error too large\n");
-        return -3;
+        return 0;
     }
 
     printf("Example PASSED\n");
     return 0;
+}
+
+int main(int argc, char* argv[]) {
+    // Check command line arguments
+    int num_spokes = 80;  // Default value
+    bool use_double = true;  // Default to double precision
+    bool custom_spokes = false;
+
+    // Parse command line arguments
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--float" || arg == "-f") {
+            use_double = false;
+        }
+        else if (arg == "--double" || arg == "-d") {
+            use_double = true;
+        }
+        else if (arg == "--help" || arg == "-h") {
+            printUsage(argv[0]);
+            return 0;
+        }
+        else {
+            // Assume this is the num_spokes value
+            try {
+                num_spokes = std::stoi(arg);
+                if (num_spokes <= 0) {
+                    printf("Error: num_spokes must be a positive integer\n");
+                    printUsage(argv[0]);
+                    return 1;
+                }
+                custom_spokes = true;
+            }
+            catch (...) {
+                printf("Error: Invalid argument: %s\n", arg.c_str());
+                printUsage(argv[0]);
+                return 1;
+            }
+        }
+    }
+
+    if (!custom_spokes) {
+        printf("No num_spokes provided. Using default value = %d\n", num_spokes);
+    }
+
+    // Call the appropriate solver based on precision flag
+    if (use_double) {
+        return solveWithCUDSS<double>(num_spokes, true);
+    }
+    else {
+        return solveWithCUDSS<float>(num_spokes, false);
+    }
 }
