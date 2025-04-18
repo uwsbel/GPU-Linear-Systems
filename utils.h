@@ -257,3 +257,79 @@ UTILS_HOST_DEVICE
 
     return std::sqrt(norm_diff) / std::sqrt(norm_ref);
 }
+
+/**
+ * Calculates the residual-based backward error for a linear system Ax = b.
+ * The backward error is defined as ||r||_2 / (||A||_F * ||x||_2 + ||b||_2)
+ * where r = b - Ax is the residual, and ||.||_F is the Frobenius norm.
+ *
+ * @param values Array of non-zero values in CSR format
+ * @param rowIndex Array of row pointers in CSR format
+ * @param columns Array of column indices in CSR format 
+ * @param x Solution vector
+ * @param b Right-hand side vector
+ * @return Backward error
+ */
+template <typename T>
+UTILS_HOST
+T calculateBackwardError(
+    const std::vector<T> &values,
+    const std::vector<int> &rowIndex,
+    const std::vector<int> &columns,
+    const std::vector<T> &x,
+    const std::vector<T> &b)
+{
+    int n = b.size();
+    if (rowIndex.size() != n + 1 || x.size() != n)
+    {
+        std::cerr << "Error: Dimensions don't match for backward error calculation" << std::endl;
+        return static_cast<T>(-1.0);
+    }
+
+    // Calculate residual r = b - Ax
+    std::vector<T> r = b;
+    for (int i = 0; i < n; i++)
+    {
+        for (int j = rowIndex[i]; j < rowIndex[i + 1]; j++)
+        {
+            int col = columns[j];
+            r[i] -= values[j] * x[col];
+        }
+    }
+
+    // Calculate ||r||_2
+    T r_norm = static_cast<T>(0.0);
+    for (int i = 0; i < n; i++)
+    {
+        r_norm += r[i] * r[i];
+    }
+    r_norm = std::sqrt(r_norm);
+
+    // Calculate ||A||_F (Frobenius norm)
+    T A_norm = static_cast<T>(0.0);
+    for (size_t i = 0; i < values.size(); i++)
+    {
+        A_norm += values[i] * values[i];
+    }
+    A_norm = std::sqrt(A_norm);
+
+    // Calculate ||x||_2
+    T x_norm = static_cast<T>(0.0);
+    for (int i = 0; i < n; i++)
+    {
+        x_norm += x[i] * x[i];
+    }
+    x_norm = std::sqrt(x_norm);
+
+    // Calculate ||b||_2
+    T b_norm = static_cast<T>(0.0);
+    for (int i = 0; i < n; i++)
+    {
+        b_norm += b[i] * b[i];
+    }
+    b_norm = std::sqrt(b_norm);
+
+    // Calculate backward error: ||r||_2 / (||A||_F * ||x||_2 + ||b||_2)
+    T denominator = A_norm * x_norm + b_norm;
+    return r_norm / denominator;
+}
