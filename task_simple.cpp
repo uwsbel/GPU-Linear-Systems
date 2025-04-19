@@ -122,10 +122,11 @@ int solveWithCUDSS(int num_spokes, bool use_double) {
 
     // Print precision mode
     printf("Running with %s precision\n", use_double ? "double" : "single (float)");
-
-    // Define file paths for the matrix and RHS (modify these paths as needed)
-    std::string matrixFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Z.dat";
-    std::string rhsFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_rhs.dat";
+    // Define file paths for the matrix and RHS based on num_spokes
+    std::string baseDir = "data/ancf/";
+    std::string baseName = num_spokes == 802 ? "1001" : "2002";
+    std::string matrixFile = baseDir + std::to_string(num_spokes) + "/solve_" + baseName + "_0_Z.dat";
+    std::string rhsFile = baseDir + std::to_string(num_spokes) + "/solve_" + baseName + "_0_rhs.dat";
 
     // Host containers for CSR data and RHS vector
     std::vector<T> csr_values_h;
@@ -351,13 +352,17 @@ int solveWithCUDSS(int num_spokes, bool use_double) {
     cudaStreamDestroy(stream);
 
     // Read known solution for error calculation
-    std::string dvFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Dv.dat";
-    std::string dlFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Dl.dat";
+    std::string dvFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_" + baseName + "_0_Dv.dat";
+    std::string dlFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_" + baseName + "_0_Dl.dat";
     std::vector<T> knownSolution = readKnownSolution<T>(dvFile, dlFile);
 
     // Calculate relative error
     T relError = calculateRelativeErrorRaw<T>(x_values_h.data(), knownSolution.data(), n);
     printf("Relative error: %f\n", relError);
+
+    // Calculate the backward error (residual-based)
+    T backwardError = calculateBackwardError<T>(csr_values_h, csr_offsets_h, csr_columns_h, x_values_h, b_values_h);
+    printf("Backward error: %e\n", backwardError);
 
     // Write solution to file
     std::string precision = std::is_same<T, float>::value ? "float" : "double";

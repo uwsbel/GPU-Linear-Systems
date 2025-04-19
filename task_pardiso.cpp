@@ -41,10 +41,12 @@ int main(int argc, char* argv[]) {
     mkl_set_num_threads(num_threads);
 
     // Data file paths
-    std::string matrixFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Z.dat";
-    std::string rhsFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_rhs.dat";
-    std::string dvFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Dv.dat";
-    std::string dlFile = "data/ancf/" + std::to_string(num_spokes) + "/solve_2002_0_Dl.dat";
+    std::string baseDir = "data/ancf/";
+    std::string baseName = num_spokes == 802 ? "1001" : "2002";
+    std::string matrixFile = baseDir + std::to_string(num_spokes) + "/solve_" + baseName + "_0_Z.dat";
+    std::string rhsFile = baseDir + std::to_string(num_spokes) + "/solve_" + baseName + "_0_rhs.dat";
+    std::string dvFile = baseDir + std::to_string(num_spokes) + "/solve_" + baseName + "_0_Dv.dat";
+    std::string dlFile = baseDir + std::to_string(num_spokes) + "/solve_" + baseName + "_0_Dl.dat";
     std::string solnFile = "soln_pardiso_" + std::to_string(num_spokes) + ".dat";
 
     // Read matrix in CSR format
@@ -135,10 +137,14 @@ int main(int argc, char* argv[]) {
     // Calculate error compared to known solution
     double error_norm = calculateRelativeError<double>(x, knownSolution);
 
+    // Calculate backward error (residual-based)
+    double backward_error = calculateBackwardError<double>(values, rowIndex, columns, x, b);
+
     // Output first and last elements for verification, plus error
     std::cout << "First element: " << x[0] << std::endl;
     std::cout << "Last element: " << x[n - 1] << std::endl;
     std::cout << "Relative Error: " << error_norm << std::endl;
+    std::cout << "Backward Error: " << backward_error << std::endl;
     std::cout << "Time (ms): " << duration.count() << std::endl;
 
     // Write solution to file
