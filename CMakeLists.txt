@@ -29,7 +29,7 @@ set(MKL_INCLUDE_DIR "${MKL_ROOT}/include")
 set(MKL_LIB_DIR "${MKL_ROOT}/lib/intel64")
 
 # Set IOMP5 library path
-set(IOMP5_LIB "/opt/intel/oneapi/compiler/2024.2/lib/libiomp5.so" CACHE FILEPATH "Path to Intel OpenMP Runtime Library (libiomp5.so)")
+set(IOMP5_LIB "/opt/intel/oneapi/compiler/2025.0/lib/libiomp5.so" CACHE FILEPATH "Path to Intel OpenMP Runtime Library (libiomp5.so)")
 
 # Define MKL libraries once
 set(MKL_LIBRARIES
@@ -78,14 +78,14 @@ target_compile_definitions(task_cusolver PRIVATE
 
 # --------------------
 # Task CuDSS
-set_source_files_properties(task_simple.cpp PROPERTIES LANGUAGE CUDA)
+set_source_files_properties(task_cudss.cpp PROPERTIES LANGUAGE CUDA)
 
-add_executable(task_simple task_simple.cpp)
+add_executable(task_cudss task_cudss.cpp)
 # Configure CUDA DSS target
-target_include_directories(task_simple PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
-target_link_libraries(task_simple PRIVATE cudss)
+target_include_directories(task_cudss PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+target_link_libraries(task_cudss PRIVATE cudss)
 # Add compile definitions for CUDA version to cuDSS target
-target_compile_definitions(task_simple PRIVATE
+target_compile_definitions(task_cudss PRIVATE
     CUDA_VERSION_MAJOR=${CMAKE_CUDA_COMPILER_VERSION_MAJOR}
     CUDA_VERSION_MINOR=${CMAKE_CUDA_COMPILER_VERSION_MINOR}
 )

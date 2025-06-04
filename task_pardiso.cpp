@@ -9,59 +9,32 @@
 #include <mkl_pardiso.h>
 #include "utils.h"
 
-int main(int argc, char* argv[]) {
-    // Check command line arguments for num_threads (required)
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <num_threads> [num_spokes]" << std::endl;
-        std::cerr << "  num_threads: Number of threads for MKL (required)" << std::endl;
-        std::cerr << "  num_spokes: Number of spokes for geometry (optional, default: 16)" << std::endl;
-        return 1;
-    }
-
-    // Parse num_threads (first argument, required)
-    int num_threads = std::stoi(argv[1]);
-    if (num_threads <= 0) {
-        std::cerr << "Error: num_threads must be a positive integer" << std::endl;
-        return 1;
-    }
-
-    // Parse num_spokes (second argument, optional with default value of 16)
-    int num_spokes = 16;  // Default value
-    if (argc > 2) {
-        num_spokes = std::stoi(argv[2]);
-        if (num_spokes <= 0) {
-            std::cerr << "Error: num_spokes must be a positive integer" << std::endl;
-            return 1;
-        }
-    } else {
-        std::cout << "No num_spokes provided. Using default value = " << num_spokes << std::endl;
-    }
-
+// Template function to solve the linear system using PARDISO
+template<typename T>
+int solveWithPardiso(const std::string& matrixFile, const std::string& rhsFile, 
+                     const std::string& dvFile, const std::string& dlFile, 
+                     const std::string& solnFile, int num_threads, int n_expected = -1) {
+    
     // Set the number of threads for MKL
     mkl_set_num_threads(num_threads);
-
-    // Data file paths
-    std::string baseDir = "data/ancf/";
-    std::string baseName = num_spokes == 802 ? "1001" : "2002";
-    std::string matrixFile = baseDir + std::to_string(num_spokes) + "/solve_" + baseName + "_0_Z.dat";
-    std::string rhsFile = baseDir + std::to_string(num_spokes) + "/solve_" + baseName + "_0_rhs.dat";
-    std::string dvFile = baseDir + std::to_string(num_spokes) + "/solve_" + baseName + "_0_Dv.dat";
-    std::string dlFile = baseDir + std::to_string(num_spokes) + "/solve_" + baseName + "_0_Dl.dat";
-    std::string solnFile = "soln_pardiso_" + std::to_string(num_spokes) + ".dat";
+    
+    // Clear MKL memory pool and caches
+    mkl_free_buffers();
+    mkl_thread_free_buffers();
 
     // Read matrix in CSR format
-    std::vector<double> values;  // Non-zero values
+    std::vector<T> values;       // Non-zero values
     std::vector<int> rowIndex;   // Row pointers
     std::vector<int> columns;    // Column indices
     int n;                       // Matrix dimension
 
-    readMatrixCSR<double>(matrixFile, values, rowIndex, columns, n);
+    readMatrixCSR<T>(matrixFile, values, rowIndex, columns, n);
 
     // Read RHS vector
-    std::vector<double> b = readVector<double>(rhsFile);
+    std::vector<T> b = readVector<T>(rhsFile);
 
     // Read known solution for comparison
-    std::vector<double> knownSolution = readKnownSolution<double>(dvFile, dlFile);
+    std::vector<T> knownSolution = readKnownSolution<T>(dvFile, dlFile);
 
     // Print sizes for debugging
     std::cout << "Matrix A dimensions: " << n << " x " << n << std::endl;
@@ -76,7 +49,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Prepare solution vector
-    std::vector<double> x(n, 0.0);
+    std::vector<T> x(n, 0.0);
 
     // PARDISO parameters
     MKL_INT mtype = 11;       // Real unsymmetric matrix
@@ -112,7 +85,7 @@ int main(int argc, char* argv[]) {
     iparm[19] = 0;                  // Output: Numbers of CG Iterations
     iparm[20] = 0;                  // 1x1 pivoting
     iparm[26] = 0;                  // No matrix checker
-    iparm[27] = (sizeof(double) == 4) ? 1 : 0;
+    iparm[27] = (sizeof(T) == 4) ? 1 : 0;  // Use float or double precision
     iparm[34] = 1;  // C indexing
     iparm[36] = 0;  // CSR
     iparm[59] = 0;  // 0 - In-Core ; 1 - Automatic switch between In-Core and Out-of-Core modes ; 2 - Out-of-Core
@@ -135,12 +108,13 @@ int main(int argc, char* argv[]) {
     std::chrono::duration<double, std::milli> duration = end - start;
 
     // Calculate error compared to known solution
-    double error_norm = calculateRelativeError<double>(x, knownSolution);
+    T error_norm = calculateRelativeError<T>(x, knownSolution);
 
     // Calculate backward error (residual-based)
-    double backward_error = calculateBackwardError<double>(values, rowIndex, columns, x, b);
+    T backward_error = calculateBackwardError<T>(values, rowIndex, columns, x, b);
 
     // Output first and last elements for verification, plus error
+    std::cout << "Precision: " << (sizeof(T) == 4 ? "float" : "double") << std::endl;
     std::cout << "First element: " << x[0] << std::endl;
     std::cout << "Last element: " << x[n - 1] << std::endl;
     std::cout << "Relative Error: " << error_norm << std::endl;
@@ -148,12 +122,79 @@ int main(int argc, char* argv[]) {
     std::cout << "Time (ms): " << duration.count() << std::endl;
 
     // Write solution to file
-    writeVectorToFile<double>(x, solnFile);
+    writeVectorToFile<T>(x, solnFile);
 
     // Release memory
     phase = -1;  // Release internal memory
     pardiso(pt, &maxfct, &mnum, &mtype, &phase, &n, values.data(), rowIndex.data(), columns.data(), NULL, &nrhs, iparm,
             &msglvl, b.data(), x.data(), &error);
+    
+    // Clear MKL memory pool and caches after computation
+    mkl_free_buffers();
+    mkl_thread_free_buffers();
 
     return 0;
+}
+
+int main(int argc, char* argv[]) {
+    // Check command line arguments for num_threads and precision (required)
+    if (argc < 3) {
+        std::cerr << "Usage: " << argv[0] << " <num_threads> <precision> [num_spokes]" << std::endl;
+        std::cerr << "  num_threads: Number of threads for MKL (required)" << std::endl;
+        std::cerr << "  precision: 'float' or 'double' (required)" << std::endl;
+        std::cerr << "  num_spokes: Number of spokes for geometry (optional, default: 16)" << std::endl;
+        return 1;
+    }
+
+    // Parse num_threads (first argument, required)
+    int num_threads = std::stoi(argv[1]);
+    if (num_threads <= 0) {
+        std::cerr << "Error: num_threads must be a positive integer" << std::endl;
+        return 1;
+    }
+
+    // Parse precision (second argument, required)
+    std::string precision = argv[2];
+    if (precision != "float" && precision != "double") {
+        std::cerr << "Error: precision must be 'float' or 'double'" << std::endl;
+        return 1;
+    }
+
+    // Parse num_spokes (third argument, optional with default value of 16)
+    int num_spokes = 16;  // Default value
+    if (argc > 3) {
+        num_spokes = std::stoi(argv[3]);
+        if (num_spokes <= 0) {
+            std::cerr << "Error: num_spokes must be a positive integer" << std::endl;
+            return 1;
+        }
+    } else {
+        std::cout << "No num_spokes provided. Using default value = " << num_spokes << std::endl;
+    }
+
+    // Data file paths based on number of spokes
+    std::string baseDir, baseName;
+    if (num_spokes == 16) {
+        baseDir = "data/ancf/refine1/16/";
+        baseName = "2002";
+    } else if (num_spokes == 80) {
+        baseDir = "data/ancf/refine2/80/";
+        baseName = "1001";
+    } else {
+        std::cerr << "Error: Unsupported number of spokes. Only 16 and 80 are supported." << std::endl;
+        return 1;
+    }
+    
+    std::string matrixFile = baseDir + "solve_" + baseName + "_0_Z.dat";
+    std::string rhsFile = baseDir + "solve_" + baseName + "_0_rhs.dat";
+    std::string dvFile = baseDir + "solve_" + baseName + "_0_Dv.dat";
+    std::string dlFile = baseDir + "solve_" + baseName + "_0_Dl.dat";
+    std::string solnFile = "soln_pardiso_" + precision + "_" + std::to_string(num_spokes) + ".dat";
+
+    // Call the appropriate template instantiation based on precision
+    if (precision == "float") {
+        return solveWithPardiso<float>(matrixFile, rhsFile, dvFile, dlFile, solnFile, num_threads);
+    } else {
+        return solveWithPardiso<double>(matrixFile, rhsFile, dvFile, dlFile, solnFile, num_threads);
+    }
 }
