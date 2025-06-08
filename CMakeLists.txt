@@ -90,6 +90,20 @@ target_compile_definitions(task_cudss PRIVATE
     CUDA_VERSION_MINOR=${CMAKE_CUDA_COMPILER_VERSION_MINOR}
 )
 
+# --------------------
+# Task CuDSS Loop
+set_source_files_properties(task_cudss_loop.cpp PROPERTIES LANGUAGE CUDA)
+
+add_executable(task_cudss_loop task_cudss_loop.cpp)
+# Configure CUDA DSS Loop target
+target_include_directories(task_cudss_loop PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+target_link_libraries(task_cudss_loop PRIVATE cudss)
+# Add compile definitions for CUDA version to cuDSS Loop target
+target_compile_definitions(task_cudss_loop PRIVATE
+    CUDA_VERSION_MAJOR=${CMAKE_CUDA_COMPILER_VERSION_MAJOR}
+    CUDA_VERSION_MINOR=${CMAKE_CUDA_COMPILER_VERSION_MINOR}
+)
+
 
 # Print configuration summary
 message(STATUS "Configuration summary:")

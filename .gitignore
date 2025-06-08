@@ -46,6 +46,7 @@ Makefile
 
 # Generated solution files
 soln.dat
+*.csv
 
 # MKL specific
 *.mod
