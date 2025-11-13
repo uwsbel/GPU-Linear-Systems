@@ -185,7 +185,7 @@ int solveWithCUDSSLoop(int num_spokes, bool use_double) {
     // Set error tolerance based on precision
     T error_tolerance = std::is_same<T, double>::value ? 1e-7 : 1e-5f;
 
-    const int NUM_ITERATIONS = 10;
+    const int NUM_ITERATIONS = 3;
 
     // Print precision mode
     printf("Running with %s precision for %d iterations\n", use_double ? "double" : "single (float)", NUM_ITERATIONS);
@@ -287,80 +287,99 @@ int solveWithCUDSSLoop(int num_spokes, bool use_double) {
                                               CUDA_R_32I, cuda_data_type, mtype, mview, base),
                          status, "cudssMatrixCreateCsr");
 
-    printf("\n=== Starting %d iterations ===\n", NUM_ITERATIONS);
+    /* Creating the cuDSS library handle */
+    cudssHandle_t handle;
+    CUDSS_CALL_AND_CHECK(cudssCreate(&handle), status, "cudssCreate");
 
-    // Loop for multiple iterations
+    /* Setting the custom stream for the library handle */
+    CUDSS_CALL_AND_CHECK(cudssSetStream(handle, stream), status, "cudssSetStream");
+
+    /* Creating cuDSS solver configuration and data objects */
+    cudssConfig_t solverConfig;
+    cudssData_t solverData;
+
+    CUDSS_CALL_AND_CHECK(cudssConfigCreate(&solverConfig), status, "cudssConfigCreate");
+    CUDSS_CALL_AND_CHECK(cudssDataCreate(handle, &solverData), status, "cudssDataCreate");
+
+    /* Set Solver Configuration Parameters */
+    
+    // Reordering algorithm
+    cudssAlgType_t reorderingAlg = CUDSS_ALG_DEFAULT;
+    CUDSS_CALL_AND_CHECK(
+        cudssConfigSet(solverConfig, CUDSS_CONFIG_REORDERING_ALG, &reorderingAlg, sizeof(reorderingAlg)), status,
+        "cudssConfigSet for cudssAlgType_t");
+
+    cudssAlgType_t pivotEpsilonAlg = CUDSS_ALG_DEFAULT;
+    CUDSS_CALL_AND_CHECK(
+        cudssConfigSet(solverConfig, CUDSS_CONFIG_PIVOT_EPSILON_ALG, &pivotEpsilonAlg, sizeof(pivotEpsilonAlg)), status,
+        "cudssConfigSet for cudssAlgType_t");
+
+    // Set pivot epsilon value (controls numerical pivoting tolerance)
+    T pivotEpsilon = std::is_same<T, double>::value ? 1e-8 : 1e-4f; //default is 1e-13 for double, 1e-5 for float
+    printf("Setting pivot epsilon to: %e\n", (double)pivotEpsilon);
+    CUDSS_CALL_AND_CHECK(
+        cudssConfigSet(solverConfig, CUDSS_CONFIG_PIVOT_EPSILON, &pivotEpsilon, sizeof(pivotEpsilon)), status,
+        "cudssConfigSet for pivot epsilon");
+
+    // int matchingType = 1;  // Switched on for pardiso
+    // CUDSS_CALL_AND_CHECK(cudssConfigSet(solverConfig, CUDSS_CONFIG_USE_MATCHING, &matchingType, sizeof(matchingType)),
+    //                         status, "cudssConfigSet for int");
+
+    int modificator = 0;
+    CUDSS_CALL_AND_CHECK(cudssConfigSet(solverConfig, CUDSS_CONFIG_SOLVE_MODE, &modificator, sizeof(modificator)),
+                         status, "cudssConfigSet for int");
+
+    int iterRefinement = 0;
+    CUDSS_CALL_AND_CHECK(cudssConfigSet(solverConfig, CUDSS_CONFIG_IR_N_STEPS, &iterRefinement, sizeof(iterRefinement)),
+                         status, "cudssConfigSet for int");
+
+    cudssPivotType_t pivotType = CUDSS_PIVOT_COL;
+    CUDSS_CALL_AND_CHECK(cudssConfigSet(solverConfig, CUDSS_CONFIG_PIVOT_TYPE, &pivotType, sizeof(pivotType)), status,
+                         "cudssConfigSet for cudssPivotType_t");
+
+    T pivotThreshold = 1;
+    CUDSS_CALL_AND_CHECK(
+        cudssConfigSet(solverConfig, CUDSS_CONFIG_PIVOT_THRESHOLD, &pivotThreshold, sizeof(pivotThreshold)), status,
+        "cudssConfigSet for real_t");
+
+    int hybridExecuteMode = 0;
+    CUDSS_CALL_AND_CHECK(
+        cudssConfigSet(solverConfig, CUDSS_CONFIG_HYBRID_EXECUTE_MODE, &hybridExecuteMode, sizeof(hybridExecuteMode)),
+        status, "cudssConfigSet for int");
+
+    /* Symbolic factorization (run once) */
+    printf("Running analysis phase...\n");
+    CUDA_CALL_AND_CHECK(cudaEventRecord(start), "cudaEventRecord start for analysis");
+    CUDSS_CALL_AND_CHECK(cudssExecute(handle, CUDSS_PHASE_ANALYSIS, solverConfig, solverData, A, x, b), status,
+                         "cudssExecute for analysis");
+    CUDA_CALL_AND_CHECK(cudaEventRecord(stop), "cudaEventRecord stop for analysis");
+    CUDA_CALL_AND_CHECK(cudaEventSynchronize(stop), "cudaEventSynchronize for analysis");
+    float analysis_time;
+    CUDA_CALL_AND_CHECK(cudaEventElapsedTime(&analysis_time, start, stop), "cudaEventElapsedTime for analysis");
+    printf("Analysis time: %f ms\n", analysis_time);
+
+    /* Factorization (run once before the loop) */
+    printf("Running factorization phase...\n");
+    CUDA_CALL_AND_CHECK(cudaEventRecord(start), "cudaEventRecord start for factorization");
+    CUDSS_CALL_AND_CHECK(cudssExecute(handle, CUDSS_PHASE_FACTORIZATION, solverConfig, solverData, A, x, b), status,
+                         "cudssExecute for factorization");
+    CUDA_CALL_AND_CHECK(cudaEventRecord(stop), "cudaEventRecord stop for factorization");
+    CUDA_CALL_AND_CHECK(cudaEventSynchronize(stop), "cudaEventSynchronize for factorization");
+    float factorization_time;
+    CUDA_CALL_AND_CHECK(cudaEventElapsedTime(&factorization_time, start, stop), "cudaEventElapsedTime for factorization");
+    printf("Factorization time: %f ms\n", factorization_time);
+
+    printf("\n=== Starting %d solve iterations ===\n", NUM_ITERATIONS);
+    printf("Analysis time: %f ms (constant)\n", analysis_time);
+    printf("Factorization time: %f ms (constant)\n", factorization_time);
+
+    // Loop for multiple solve iterations only
     for (int iter = 0; iter < NUM_ITERATIONS; ++iter) {
-        printf("\n--- Iteration %d ---\n", iter + 1);
+        printf("\n--- Solve Iteration %d ---\n", iter + 1);
 
-        /* Creating the cuDSS library handle */
-        cudssHandle_t handle;
-        CUDSS_CALL_AND_CHECK(cudssCreate(&handle), status, "cudssCreate");
-
-        /* Setting the custom stream for the library handle */
-        CUDSS_CALL_AND_CHECK(cudssSetStream(handle, stream), status, "cudssSetStream");
-
-        /* Creating cuDSS solver configuration and data objects */
-        cudssConfig_t solverConfig;
-        cudssData_t solverData;
-
-        CUDSS_CALL_AND_CHECK(cudssConfigCreate(&solverConfig), status, "cudssConfigCreate");
-        CUDSS_CALL_AND_CHECK(cudssDataCreate(handle, &solverData), status, "cudssDataCreate");
-
-        /* Set Solver Configuration Parameters */
-        
-        // Reordering algorithm
-        cudssAlgType_t reorderingAlg = CUDSS_ALG_DEFAULT;
-        CUDSS_CALL_AND_CHECK(
-            cudssConfigSet(solverConfig, CUDSS_CONFIG_REORDERING_ALG, &reorderingAlg, sizeof(reorderingAlg)), status,
-            "cudssConfigSet for cudssAlgType_t");
-
-        cudssAlgType_t pivotEpsilonAlg = CUDSS_ALG_1;
-        CUDSS_CALL_AND_CHECK(
-            cudssConfigSet(solverConfig, CUDSS_CONFIG_PIVOT_EPSILON_ALG, &pivotEpsilonAlg, sizeof(pivotEpsilonAlg)), status,
-            "cudssConfigSet for cudssAlgType_t");
-
-        int matchingType = 1;
-        CUDSS_CALL_AND_CHECK(cudssConfigSet(solverConfig, CUDSS_CONFIG_MATCHING_TYPE, &matchingType, sizeof(matchingType)),
-                             status, "cudssConfigSet for int");
-
-        int modificator = 0;
-        CUDSS_CALL_AND_CHECK(cudssConfigSet(solverConfig, CUDSS_CONFIG_SOLVE_MODE, &modificator, sizeof(modificator)),
-                             status, "cudssConfigSet for int");
-
-        int iterRefinement = 0;
-        CUDSS_CALL_AND_CHECK(cudssConfigSet(solverConfig, CUDSS_CONFIG_IR_N_STEPS, &iterRefinement, sizeof(iterRefinement)),
-                             status, "cudssConfigSet for int");
-
-        cudssPivotType_t pivotType = CUDSS_PIVOT_COL;
-        CUDSS_CALL_AND_CHECK(cudssConfigSet(solverConfig, CUDSS_CONFIG_PIVOT_TYPE, &pivotType, sizeof(pivotType)), status,
-                             "cudssConfigSet for cudssPivotType_t");
-
-        T pivotThreshold = 1;
-        CUDSS_CALL_AND_CHECK(
-            cudssConfigSet(solverConfig, CUDSS_CONFIG_PIVOT_THRESHOLD, &pivotThreshold, sizeof(pivotThreshold)), status,
-            "cudssConfigSet for real_t");
-
-        int hybridExecuteMode = 0;
-        CUDSS_CALL_AND_CHECK(
-            cudssConfigSet(solverConfig, CUDSS_CONFIG_HYBRID_EXECUTE_MODE, &hybridExecuteMode, sizeof(hybridExecuteMode)),
-            status, "cudssConfigSet for int");
-
-        /* Symbolic factorization */
-        CUDA_CALL_AND_CHECK(cudaEventRecord(start), "cudaEventRecord start for analysis");
-        CUDSS_CALL_AND_CHECK(cudssExecute(handle, CUDSS_PHASE_ANALYSIS, solverConfig, solverData, A, x, b), status,
-                             "cudssExecute for analysis");
-        CUDA_CALL_AND_CHECK(cudaEventRecord(stop), "cudaEventRecord stop for analysis");
-        CUDA_CALL_AND_CHECK(cudaEventSynchronize(stop), "cudaEventSynchronize for analysis");
-        CUDA_CALL_AND_CHECK(cudaEventElapsedTime(&analysis_times[iter], start, stop), "cudaEventElapsedTime for analysis");
-
-        /* Factorization */
-        CUDA_CALL_AND_CHECK(cudaEventRecord(start), "cudaEventRecord start for factorization");
-        CUDSS_CALL_AND_CHECK(cudssExecute(handle, CUDSS_PHASE_FACTORIZATION, solverConfig, solverData, A, x, b), status,
-                             "cudssExecute for factorization");
-        CUDA_CALL_AND_CHECK(cudaEventRecord(stop), "cudaEventRecord stop for factorization");
-        CUDA_CALL_AND_CHECK(cudaEventSynchronize(stop), "cudaEventSynchronize for factorization");
-        CUDA_CALL_AND_CHECK(cudaEventElapsedTime(&factorization_times[iter], start, stop), "cudaEventElapsedTime for factorization");
+        // Store analysis and factorization times for logging (same for all iterations)
+        analysis_times[iter] = analysis_time;
+        factorization_times[iter] = factorization_time;
 
         /* Solving */
         CUDA_CALL_AND_CHECK(cudaEventRecord(start), "cudaEventRecord start for solve");
@@ -384,19 +403,17 @@ int solveWithCUDSSLoop(int num_spokes, bool use_double) {
         // Calculate the backward error (residual-based)
         backward_errors[iter] = calculateBackwardError<T>(csr_values_h, csr_offsets_h, csr_columns_h, x_values_h, b_values_h);
 
-        // Output the time taken for this iteration
-        printf("Analysis time: %f ms\n", analysis_times[iter]);
-        printf("Factorization time: %f ms\n", factorization_times[iter]);
+        // Output only the varying solve time and errors for this iteration
         printf("Solve time: %f ms\n", solve_times[iter]);
-        printf("Total time: %f ms\n", analysis_times[iter] + factorization_times[iter] + solve_times[iter]);
+        printf("Total time: %f ms\n", analysis_time + factorization_time + solve_times[iter]);
         printf("Relative error: %f\n", relative_errors[iter]);
         printf("Backward error: %e\n", backward_errors[iter]);
-
-        /* Clean up cuDSS resources for this iteration */
-        CUDSS_CALL_AND_CHECK(cudssDataDestroy(handle, solverData), status, "cudssDataDestroy");
-        CUDSS_CALL_AND_CHECK(cudssConfigDestroy(solverConfig), status, "cudssConfigDestroy");
-        CUDSS_CALL_AND_CHECK(cudssDestroy(handle), status, "cudssDestroy");
     }
+
+    /* Clean up cuDSS resources after all iterations */
+    CUDSS_CALL_AND_CHECK(cudssDataDestroy(handle, solverData), status, "cudssDataDestroy");
+    CUDSS_CALL_AND_CHECK(cudssConfigDestroy(solverConfig), status, "cudssConfigDestroy");
+    CUDSS_CALL_AND_CHECK(cudssDestroy(handle), status, "cudssDestroy");
 
     /* Clean up matrix objects after all iterations */
     CUDSS_CALL_AND_CHECK(cudssMatrixDestroy(A), status, "cudssMatrixDestroy for A");

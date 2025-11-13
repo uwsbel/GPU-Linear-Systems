@@ -4,16 +4,80 @@
 #include <fstream>
 #include <string>
 #include <cmath>
-#include <algorithm>  // For std::sort
+#include <algorithm>
+#include <iomanip>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <mkl.h>
 #include <mkl_pardiso.h>
 #include "utils.h"
 
-// Template function to solve the linear system using PARDISO
+// Function to create directory if it doesn't exist
+void createDirectoryIfNotExists(const std::string& dir) {
+    struct stat st = {0};
+    if (stat(dir.c_str(), &st) == -1) {
+        mkdir(dir.c_str(), 0700);
+    }
+}
+
+// Function to write timing log
+template <typename T>
+void writeTimingLog(int num_spokes, bool use_double, float analysis_time, 
+                   float factorization_time, float solve_time, T error_norm, T backwardError) {
+    createDirectoryIfNotExists("logs");
+    
+    // Get current timestamp
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    
+    std::string precision = use_double ? "double" : "float";
+    std::string logFile = "logs/pardiso_detailed_timing.csv";
+    
+    // Check if file exists to determine if we need to write header
+    bool fileExists = (access(logFile.c_str(), F_OK) == 0);
+    
+    std::ofstream log(logFile, std::ios::app);
+    if (!log.is_open()) {
+        printf("Warning: Could not open log file for writing\n");
+        return;
+    }
+    
+    // Write header if file is new
+    if (!fileExists) {
+        log << "timestamp,num_spokes,precision,analysis_time_ms,factorization_time_ms,solve_time_ms,total_time_ms,relative_error,backward_error\n";
+    }
+    
+    // Write timing data
+    log << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S") << ","
+        << num_spokes << ","
+        << precision << ","
+        << std::fixed << std::setprecision(6)
+        << analysis_time << ","
+        << factorization_time << ","
+        << solve_time << ","
+        << (analysis_time + factorization_time + solve_time) << ","
+        << std::scientific << std::setprecision(6)
+        << error_norm << ","
+        << backwardError << "\n";
+    
+    log.close();
+    printf("Timing data logged to %s\n", logFile.c_str());
+}
+
+// Function to print usage information
+void printUsage(const char* programName) {
+    printf("Usage: %s [num_spokes] [options]\n", programName);
+    printf("Options:\n");
+    printf("  -f, --float    Use single precision (float)\n");
+    printf("  -d, --double   Use double precision (default)\n");
+    printf("Example: %s 32 --float\n", programName);
+}
+
+// Template function to solve the linear system using PARDISO with detailed timing
 template<typename T>
-int solveWithPardiso(const std::string& matrixFile, const std::string& rhsFile, 
-                     const std::string& dvFile, const std::string& dlFile, 
-                     const std::string& solnFile, int num_threads, int n_expected = -1) {
+int solveWithPardisoDetailed(const std::string& matrixFile, const std::string& rhsFile, 
+                           const std::string& dvFile, const std::string& dlFile, 
+                           const std::string& solnFile, int num_threads, int n_expected = -1) {
     
     // Set the number of threads for MKL
     mkl_set_num_threads(num_threads);
@@ -90,22 +154,66 @@ int solveWithPardiso(const std::string& matrixFile, const std::string& rhsFile,
     iparm[36] = 0;  // CSR
     iparm[59] = 0;  // 0 - In-Core ; 1 - Automatic switch between In-Core and Out-of-Core modes ; 2 - Out-of-Core
 
-    // Measure execution time
+    // Timing variables
+    float analysis_time = 0, factorization_time = 0, solve_time = 0;
     auto start = std::chrono::high_resolution_clock::now();
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> duration;
 
-    // Analysis, numerical factorization, and solution
-    phase = 13;  // Analysis + numerical factorization + solve
-
+    // Phase 11: Analysis (symbolic factorization)
+    start = std::chrono::high_resolution_clock::now();
+    phase = 11;  // Analysis phase
     pardiso(pt, &maxfct, &mnum, &mtype, &phase, &n, values.data(), rowIndex.data(), columns.data(), NULL, &nrhs, iparm,
             &msglvl, b.data(), x.data(), &error);
+    end = std::chrono::high_resolution_clock::now();
+    duration = end - start;
+    analysis_time = duration.count();
 
     if (error != 0) {
-        std::cerr << "ERROR during solution: " << error << std::endl;
+        std::cerr << "ERROR during analysis: " << error << std::endl;
         return 1;
     }
 
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> duration = end - start;
+    // Phase 22: Numerical factorization
+    start = std::chrono::high_resolution_clock::now();
+    phase = 22;  // Factorization phase
+    pardiso(pt, &maxfct, &mnum, &mtype, &phase, &n, values.data(), rowIndex.data(), columns.data(), NULL, &nrhs, iparm,
+            &msglvl, b.data(), x.data(), &error);
+    end = std::chrono::high_resolution_clock::now();
+    duration = end - start;
+    factorization_time = duration.count();
+
+    if (error != 0) {
+        std::cerr << "ERROR during factorization: " << error << std::endl;
+        return 1;
+    }
+
+    // Phase 33: Solve (forward/backward substitution)
+    start = std::chrono::high_resolution_clock::now();
+    phase = 33;  // Solve phase
+    pardiso(pt, &maxfct, &mnum, &mtype, &phase, &n, values.data(), rowIndex.data(), columns.data(), NULL, &nrhs, iparm,
+            &msglvl, b.data(), x.data(), &error);
+    end = std::chrono::high_resolution_clock::now();
+    duration = end - start;
+    solve_time = duration.count();
+
+    if (error != 0) {
+        std::cerr << "ERROR during solve: " << error << std::endl;
+        return 1;
+    }
+
+    // Output timing results
+    std::cout << "Analysis time: " << analysis_time << " ms" << std::endl;
+    std::cout << "Factorization time: " << factorization_time << " ms" << std::endl;
+    std::cout << "Solve time: " << solve_time << " ms" << std::endl;
+    std::cout << "Total time: " << (analysis_time + factorization_time + solve_time) << " ms" << std::endl;
+
+    // Print solver statistics
+    std::cout << "\n=== Solver Statistics ===" << std::endl;
+    std::cout << "Number of nonzeros in LU factors: " << iparm[17] << std::endl;
+    std::cout << "Mflops for LU factorization: " << iparm[18] << std::endl;
+    std::cout << "Number of perturbed pivots: " << iparm[13] << std::endl;
+    std::cout << "===========================" << std::endl << std::endl;
 
     // Calculate error compared to known solution
     T error_norm = calculateRelativeError<T>(x, knownSolution);
@@ -119,10 +227,12 @@ int solveWithPardiso(const std::string& matrixFile, const std::string& rhsFile,
     std::cout << "Last element: " << x[n - 1] << std::endl;
     std::cout << "Relative Error: " << error_norm << std::endl;
     std::cout << "Backward Error: " << backward_error << std::endl;
-    std::cout << "Time (ms): " << duration.count() << std::endl;
 
     // Write solution to file
     writeVectorToFile<T>(x, solnFile);
+
+    // Write timing log
+    writeTimingLog<T>(num_threads, sizeof(T) == 8, analysis_time, factorization_time, solve_time, error_norm, backward_error);
 
     // Release memory
     phase = -1;  // Release internal memory
@@ -189,12 +299,12 @@ int main(int argc, char* argv[]) {
     std::string rhsFile = baseDir + "solve_" + baseName + "_0_rhs.dat";
     std::string dvFile = baseDir + "solve_" + baseName + "_0_Dv.dat";
     std::string dlFile = baseDir + "solve_" + baseName + "_0_Dl.dat";
-    std::string solnFile = "soln_pardiso_" + precision + "_" + std::to_string(num_spokes) + ".dat";
+    std::string solnFile = "soln_pardiso_detailed_" + precision + "_" + std::to_string(num_spokes) + ".dat";
 
-    // Call the appropriate template instantiation based on precision
+    // Call the appropriate template function based on precision
     if (precision == "float") {
-        return solveWithPardiso<float>(matrixFile, rhsFile, dvFile, dlFile, solnFile, num_threads);
+        return solveWithPardisoDetailed<float>(matrixFile, rhsFile, dvFile, dlFile, solnFile, num_threads);
     } else {
-        return solveWithPardiso<double>(matrixFile, rhsFile, dvFile, dlFile, solnFile, num_threads);
+        return solveWithPardisoDetailed<double>(matrixFile, rhsFile, dvFile, dlFile, solnFile, num_threads);
     }
-}
+} 

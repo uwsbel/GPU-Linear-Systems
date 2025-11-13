@@ -19,7 +19,7 @@ set(CMAKE_CUDA_EXTENSIONS OFF)
 set(CMAKE_CUDA_ARCHITECTURES 86)
 
 # Find required packages
-find_package(cudss 0.5.0 REQUIRED)
+find_package(cudss 0.7.1 REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(Eigen3 REQUIRED)
 
@@ -60,6 +60,13 @@ add_executable(task_pardiso task_pardiso.cpp)
 # Configure CPU-based target for Pardiso
 target_include_directories(task_pardiso PRIVATE ${MKL_INCLUDE_DIR})
 target_link_libraries(task_pardiso PRIVATE ${MKL_LIBRARIES})
+
+# --------------------
+# Task Pardiso Detailed (with separate timing)
+add_executable(task_pardiso_detailed task_pardiso_detailed.cpp)
+# Configure CPU-based target for Pardiso Detailed
+target_include_directories(task_pardiso_detailed PRIVATE ${MKL_INCLUDE_DIR})
+target_link_libraries(task_pardiso_detailed PRIVATE ${MKL_LIBRARIES})
 
 # --------------------
 # Task CuSolver

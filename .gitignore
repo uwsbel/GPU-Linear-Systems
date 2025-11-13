@@ -6,6 +6,9 @@ cmake-build-*/
 soln_*dat
 benchmark_results.png
 
+# Plot directories and files
+plots/
+
 # Compiled Object files
 *.o
 *.obj
