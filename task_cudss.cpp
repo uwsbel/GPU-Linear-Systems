@@ -240,6 +240,14 @@ int solveWithCUDSS(int num_spokes, bool use_double) {
     cudaStream_t stream = NULL;
     CUDA_CALL_AND_CHECK(cudaStreamCreate(&stream), "cudaStreamCreate");
 
+    /* Enable verbose logging for cuDSS */
+    // Set CUDSS_LOG_LEVEL=5 for maximum verbosity (0=silent, 5=verbose)
+    if (setenv("CUDSS_LOG_LEVEL", "5", 1) != 0) {
+        printf("Warning: Failed to set CUDSS_LOG_LEVEL environment variable\n");
+    } else {
+        printf("Verbose logging enabled (CUDSS_LOG_LEVEL=5)\n");
+    }
+
     /* Creating the cuDSS library handle */
     cudssHandle_t handle;
     CUDSS_CALL_AND_CHECK(cudssCreate(&handle), status, "cudssCreate");
@@ -303,7 +311,14 @@ int solveWithCUDSS(int num_spokes, bool use_double) {
     // Skipping CUDSS_CONFIG_USE_CUDA_REGISTER_MEMORY -> Deafult good
     // Skipping CUDSS_CONFIG_HOST_NTHREADS -> Uses max threads by default
 
-    int hybridExecuteMode = 0;  // No CPU for now
+    int hybridMode = 0;  // Hybrid memory mode OFF
+    printf("Setting hybrid memory mode to: %d\n", hybridMode);
+    CUDSS_CALL_AND_CHECK(
+        cudssConfigSet(solverConfig, CUDSS_CONFIG_HYBRID_MODE, &hybridMode, sizeof(hybridMode)),
+        status, "cudssConfigSet for int");
+
+    int hybridExecuteMode = 0;  // Hybrid execute mode OFF
+    printf("Setting hybrid execute mode to: %d\n", hybridExecuteMode);
     CUDSS_CALL_AND_CHECK(
         cudssConfigSet(solverConfig, CUDSS_CONFIG_HYBRID_EXECUTE_MODE, &hybridExecuteMode, sizeof(hybridExecuteMode)),
         status, "cudssConfigSet for int");
