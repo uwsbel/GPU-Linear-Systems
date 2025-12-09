@@ -22,7 +22,7 @@ void createDirectoryIfNotExists(const std::string& dir) {
 
 // Function to write timing log
 template <typename T>
-void writeTimingLog(int num_spokes, bool use_double, float analysis_time, 
+void writeTimingLog(int num_rigs, bool use_double, float analysis_time, 
                    float factorization_time, float solve_time, T error_norm, T backwardError) {
     createDirectoryIfNotExists("logs");
     
@@ -44,12 +44,12 @@ void writeTimingLog(int num_spokes, bool use_double, float analysis_time,
     
     // Write header if file is new
     if (!fileExists) {
-        log << "timestamp,num_spokes,precision,analysis_time_ms,factorization_time_ms,solve_time_ms,total_time_ms,relative_error,backward_error\n";
+        log << "timestamp,num_rigs,precision,analysis_time_ms,factorization_time_ms,solve_time_ms,total_time_ms,relative_error,backward_error\n";
     }
     
     // Write timing data
     log << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S") << ","
-        << num_spokes << ","
+        << num_rigs << ","
         << precision << ","
         << std::fixed << std::setprecision(6)
         << analysis_time << ","
@@ -66,18 +66,19 @@ void writeTimingLog(int num_spokes, bool use_double, float analysis_time,
 
 // Function to print usage information
 void printUsage(const char* programName) {
-    printf("Usage: %s [num_spokes] [options]\n", programName);
-    printf("Options:\n");
-    printf("  -f, --float    Use single precision (float)\n");
-    printf("  -d, --double   Use double precision (default)\n");
-    printf("Example: %s 32 --float\n", programName);
+    printf("Usage: %s <num_threads> <precision> [num_rigs]\n", programName);
+    printf("  num_threads: Number of threads for MKL (required)\n");
+    printf("  precision: 'float' or 'double' (required)\n");
+    printf("  num_rigs: Number of rigs (optional, default: 4)\n");
+    printf("Supported num_rigs values: 1, 2, 4, 8, 10, 25\n");
+    printf("Example: %s 16 double 4\n", programName);
 }
 
 // Template function to solve the linear system using PARDISO with detailed timing
 template<typename T>
 int solveWithPardisoDetailed(const std::string& matrixFile, const std::string& rhsFile, 
                            const std::string& dvFile, const std::string& dlFile, 
-                           const std::string& solnFile, int num_threads, int n_expected = -1) {
+                           const std::string& solnFile, int num_threads, int num_rigs, int n_expected = -1) {
     
     // Set the number of threads for MKL
     mkl_set_num_threads(num_threads);
@@ -232,7 +233,7 @@ int solveWithPardisoDetailed(const std::string& matrixFile, const std::string& r
     writeVectorToFile<T>(x, solnFile);
 
     // Write timing log
-    writeTimingLog<T>(num_threads, sizeof(T) == 8, analysis_time, factorization_time, solve_time, error_norm, backward_error);
+    writeTimingLog<T>(num_rigs, sizeof(T) == 8, analysis_time, factorization_time, solve_time, error_norm, backward_error);
 
     // Release memory
     phase = -1;  // Release internal memory
@@ -249,10 +250,11 @@ int solveWithPardisoDetailed(const std::string& matrixFile, const std::string& r
 int main(int argc, char* argv[]) {
     // Check command line arguments for num_threads and precision (required)
     if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <num_threads> <precision> [num_spokes]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <num_threads> <precision> [num_rigs]" << std::endl;
         std::cerr << "  num_threads: Number of threads for MKL (required)" << std::endl;
         std::cerr << "  precision: 'float' or 'double' (required)" << std::endl;
-        std::cerr << "  num_spokes: Number of spokes for geometry (optional, default: 16)" << std::endl;
+        std::cerr << "  num_rigs: Number of rigs (optional, default: 4)" << std::endl;
+        std::cerr << "Supported num_rigs values: 1, 2, 4, 8, 10, 25" << std::endl;
         return 1;
     }
 
@@ -270,41 +272,39 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Parse num_spokes (third argument, optional with default value of 16)
-    int num_spokes = 16;  // Default value
+    // Parse num_rigs (third argument, optional with default value of 4)
+    int num_rigs = 4;  // Default value
     if (argc > 3) {
-        num_spokes = std::stoi(argv[3]);
-        if (num_spokes <= 0) {
-            std::cerr << "Error: num_spokes must be a positive integer" << std::endl;
+        num_rigs = std::stoi(argv[3]);
+        if (num_rigs <= 0) {
+            std::cerr << "Error: num_rigs must be a positive integer" << std::endl;
             return 1;
         }
     } else {
-        std::cout << "No num_spokes provided. Using default value = " << num_spokes << std::endl;
+        std::cout << "No num_rigs provided. Using default value = " << num_rigs << std::endl;
     }
 
-    // Data file paths based on number of spokes
-    std::string baseDir, baseName;
-    if (num_spokes == 16) {
-        baseDir = "data/ancf/refine1/16/";
-        baseName = "2002";
-    } else if (num_spokes == 80) {
-        baseDir = "data/ancf/refine2/80/";
-        baseName = "1001";
-    } else {
-        std::cerr << "Error: Unsupported number of spokes. Only 16 and 80 are supported." << std::endl;
+    // Validate num_rigs
+    if (num_rigs != 1 && num_rigs != 2 && num_rigs != 4 && num_rigs != 8 && num_rigs != 10 && num_rigs != 25) {
+        std::cerr << "Error: Unsupported number of rigs. Supported values are 1, 2, 4, 8, 10, 25." << std::endl;
         return 1;
     }
+
+    // Data file paths based on number of rigs (multi_rig data)
+    std::string baseDir = "data/ancf/multi_rig/";
+    std::string rigsDir = std::to_string(num_rigs) + "_rigs";
+    std::string baseName = "201";
     
-    std::string matrixFile = baseDir + "solve_" + baseName + "_0_Z.dat";
-    std::string rhsFile = baseDir + "solve_" + baseName + "_0_rhs.dat";
-    std::string dvFile = baseDir + "solve_" + baseName + "_0_Dv.dat";
-    std::string dlFile = baseDir + "solve_" + baseName + "_0_Dl.dat";
-    std::string solnFile = "soln_pardiso_detailed_" + precision + "_" + std::to_string(num_spokes) + ".dat";
+    std::string matrixFile = baseDir + rigsDir + "/solve_" + baseName + "_0_Z.dat";
+    std::string rhsFile = baseDir + rigsDir + "/solve_" + baseName + "_0_rhs.dat";
+    std::string dvFile = baseDir + rigsDir + "/solve_" + baseName + "_0_Dv.dat";
+    std::string dlFile = baseDir + rigsDir + "/solve_" + baseName + "_0_Dl.dat";
+    std::string solnFile = "soln_pardiso_detailed_" + precision + "_" + std::to_string(num_rigs) + "_rigs.dat";
 
     // Call the appropriate template function based on precision
     if (precision == "float") {
-        return solveWithPardisoDetailed<float>(matrixFile, rhsFile, dvFile, dlFile, solnFile, num_threads);
+        return solveWithPardisoDetailed<float>(matrixFile, rhsFile, dvFile, dlFile, solnFile, num_threads, num_rigs);
     } else {
-        return solveWithPardisoDetailed<double>(matrixFile, rhsFile, dvFile, dlFile, solnFile, num_threads);
+        return solveWithPardisoDetailed<double>(matrixFile, rhsFile, dvFile, dlFile, solnFile, num_threads, num_rigs);
     }
 } 

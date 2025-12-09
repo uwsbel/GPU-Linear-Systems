@@ -114,7 +114,7 @@ void createDirectoryIfNotExists(const std::string& dir) {
 
 // Function to write timing log
 template <typename T>
-void writeTimingLog(int num_spokes, bool use_double, float analysis_time, 
+void writeTimingLog(int num_rigs, bool use_double, float analysis_time, 
                    float factorization_time, float solve_time, T backwardError) {
     createDirectoryIfNotExists("./logs");
     
@@ -136,12 +136,12 @@ void writeTimingLog(int num_spokes, bool use_double, float analysis_time,
     
     // Write header if file is new
     if (!fileExists) {
-        log << "timestamp,num_spokes,precision,analysis_time_ms,factorization_time_ms,solve_time_ms,total_time_ms,backward_error\n";
+        log << "timestamp,num_rigs,precision,analysis_time_ms,factorization_time_ms,solve_time_ms,total_time_ms,backward_error\n";
     }
     
     // Write timing data
     log << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S") << ","
-        << num_spokes << ","
+        << num_rigs << ","
         << precision << ","
         << std::fixed << std::setprecision(6)
         << analysis_time << ","
@@ -157,16 +157,17 @@ void writeTimingLog(int num_spokes, bool use_double, float analysis_time,
 
 // Function to print usage information
 void printUsage(const char* programName) {
-    printf("Usage: %s [num_spokes] [options]\n", programName);
+    printf("Usage: %s [num_rigs] [options]\n", programName);
     printf("Options:\n");
     printf("  -f, --float    Use single precision (float)\n");
     printf("  -d, --double   Use double precision (default)\n");
-    printf("Example: %s 32 --float\n", programName);
+    printf("Supported num_rigs values: 1, 2, 4, 8, 10, 25\n");
+    printf("Example: %s 4 --float\n", programName);
 }
 
 // Template function for solving with different precision
 template <typename T>
-int solveWithCUDSS(int num_spokes, bool use_double) {
+int solveWithCUDSS(int num_rigs, bool use_double) {
     cudssStatus_t status = CUDSS_STATUS_SUCCESS;
     
     // Define CUDA data type based on template type
@@ -177,23 +178,20 @@ int solveWithCUDSS(int num_spokes, bool use_double) {
 
     // Print precision mode
     printf("Running with %s precision\n", use_double ? "double" : "single (float)");
-    // Define file paths for the matrix and RHS based on num_spokes
-    std::string baseDir = "data/ancf/";
-    std::string refineDir, baseName;
     
-    if (num_spokes == 16) {
-        refineDir = "refine1";
-        baseName = "2002";
-    } else if (num_spokes == 80) {
-        refineDir = "refine2";
-        baseName = "1001";
-    } else {
-        printf("Error: Unsupported num_spokes value: %d. Supported values are 16 and 80.\n", num_spokes);
+    // Validate num_rigs
+    if (num_rigs != 1 && num_rigs != 2 && num_rigs != 4 && num_rigs != 8 && num_rigs != 10 && num_rigs != 25) {
+        printf("Error: Unsupported num_rigs value: %d. Supported values are 1, 2, 4, 8, 10, 25.\n", num_rigs);
         return -1;
     }
     
-    std::string matrixFile = baseDir + refineDir + "/" + std::to_string(num_spokes) + "/solve_" + baseName + "_0_Z.dat";
-    std::string rhsFile = baseDir + refineDir + "/" + std::to_string(num_spokes) + "/solve_" + baseName + "_0_rhs.dat";
+    // Define file paths for the matrix and RHS based on num_rigs (multi_rig data)
+    std::string baseDir = "data/ancf/multi_rig/";
+    std::string rigsDir = std::to_string(num_rigs) + "_rigs";
+    std::string baseName = "201";
+    
+    std::string matrixFile = baseDir + rigsDir + "/solve_" + baseName + "_0_Z.dat";
+    std::string rhsFile = baseDir + rigsDir + "/solve_" + baseName + "_0_rhs.dat";
 
     // Host containers for CSR data and RHS vector
     std::vector<T> csr_values_h;
@@ -453,8 +451,8 @@ int solveWithCUDSS(int num_spokes, bool use_double) {
     CUDA_CALL_AND_CHECK(cudaDeviceReset(), "cudaDeviceReset");
 
     // Read known solution for error calculation
-    std::string dvFile = baseDir + refineDir + "/" + std::to_string(num_spokes) + "/solve_" + baseName + "_0_Dv.dat";
-    std::string dlFile = baseDir + refineDir + "/" + std::to_string(num_spokes) + "/solve_" + baseName + "_0_Dl.dat";
+    std::string dvFile = baseDir + rigsDir + "/solve_" + baseName + "_0_Dv.dat";
+    std::string dlFile = baseDir + rigsDir + "/solve_" + baseName + "_0_Dl.dat";
     std::vector<T> knownSolution = readKnownSolution<T>(dvFile, dlFile);
 
     // Calculate relative error
@@ -468,7 +466,7 @@ int solveWithCUDSS(int num_spokes, bool use_double) {
     // Write solution to file
     createDirectoryIfNotExists("./results");
     std::string precision = std::is_same<T, float>::value ? "float" : "double";
-    std::string outputFile = "./results/soln_simple_" + precision + "_" + std::to_string(num_spokes) + ".dat";
+    std::string outputFile = "./results/soln_simple_" + precision + "_" + std::to_string(num_rigs) + "_rigs.dat";
     writeVectorToFile<T>(x_values_h, outputFile);
 
     // if (relError > error_tolerance) {
@@ -481,7 +479,7 @@ int solveWithCUDSS(int num_spokes, bool use_double) {
     printf("Example PASSED\n");
 
     // Write timing log after all measurements are complete
-    writeTimingLog<T>(num_spokes, use_double, analysis_time, factorization_time, solve_time, backwardError);
+    writeTimingLog<T>(num_rigs, use_double, analysis_time, factorization_time, solve_time, backwardError);
 
     // Calculate and print overall execution time
     auto overall_end = std::chrono::high_resolution_clock::now();
@@ -495,9 +493,9 @@ int solveWithCUDSS(int num_spokes, bool use_double) {
 
 int main(int argc, char* argv[]) {
     // Check command line arguments
-    int num_spokes = 80;  // Default value
+    int num_rigs = 4;  // Default value
     bool use_double = true;  // Default to double precision
-    bool custom_spokes = false;
+    bool custom_rigs = false;
 
     // Parse command line arguments
     for (int i = 1; i < argc; i++) {
@@ -513,16 +511,16 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         else {
-            // Assume this is the num_spokes value
+            // Assume this is the num_rigs value
             try {
-                num_spokes = std::stoi(arg);
-                if (num_spokes <= 0) {
-                    printf("Error: num_spokes must be a positive integer\n");
+                num_rigs = std::stoi(arg);
+                if (num_rigs <= 0) {
+                    printf("Error: num_rigs must be a positive integer\n");
                     printUsage(argv[0]);
                     return 1;
                 }
-                custom_spokes = true;
-                printf("Using num_spokes = %d\n", num_spokes);
+                custom_rigs = true;
+                printf("Using num_rigs = %d\n", num_rigs);
             }
             catch (...) {
                 printf("Error: Invalid argument: %s\n", arg.c_str());
@@ -532,15 +530,15 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (!custom_spokes) {
-        printf("No num_spokes provided. Using default value = %d\n", num_spokes);
+    if (!custom_rigs) {
+        printf("No num_rigs provided. Using default value = %d\n", num_rigs);
     }
 
     // Call the appropriate solver based on precision flag
     if (use_double) {
-        return solveWithCUDSS<double>(num_spokes, true);
+        return solveWithCUDSS<double>(num_rigs, true);
     }
     else {
-        return solveWithCUDSS<float>(num_spokes, false);
+        return solveWithCUDSS<float>(num_rigs, false);
     }
 }
