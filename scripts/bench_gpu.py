@@ -7,8 +7,10 @@ Runs the task_cudss executable 5 times and prints the output
 import subprocess
 import os
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 def main():
-    executable = "./build/task_cudss"
+    executable = os.path.join(REPO_ROOT, "build", "task_cudss")
     num_runs = 6
     num_spokes = 80 # Options: 16, 80
     precision_type = "--double"  # Options: --float, --double

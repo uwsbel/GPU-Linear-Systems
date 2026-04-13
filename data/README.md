@@ -20,4 +20,10 @@ Each problem is four `.dat` files: `Z` (CSR matrix as COO triplets), `rhs`, `Dv`
 | 25   |     617,175     |   52,388,465 |
 | 50   |   1,234,350     |  104,776,935 |
 
-Provision these locally before running multi-rig tasks. Override the data root with the `DATA_DIR` env var.
+### Download
+
+Archive (tar.gz) containing the four canonical files per rig count:
+
+- **Box:** `<https://uwmadison.box.com/s/85wzzsl38joxmj2jgc5oaliqh7k8ah4n>`
+
+Extract at the repo root

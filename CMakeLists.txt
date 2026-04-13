@@ -39,8 +39,8 @@ set(MKL_LIBRARIES
     ${IOMP5_LIB}
 )
 
-# Include the main project directory to make utils.h available to all targets
-include_directories(${CMAKE_SOURCE_DIR})
+# Expose common/ so utils.h is on the include path for all targets
+include_directories(${CMAKE_SOURCE_DIR}/common)
 
 # Copy data directory to build directory
 file(COPY ${CMAKE_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})

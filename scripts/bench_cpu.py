@@ -7,8 +7,10 @@ Runs the task-pardiso executable multiple times
 import subprocess
 import os
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 def main():
-    executable = "./build/task_pardiso"
+    executable = os.path.join(REPO_ROOT, "build", "task_pardiso")
     num_runs = 6
     
     # Parameters
