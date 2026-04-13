@@ -60,4 +60,10 @@ soln.dat
 
 # OS specific
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# Claude Code local instructions
+CLAUDE.md
+
+# Large benchmark data (provisioned locally; see data/README.md)
+data/ancf/multi_rig/
