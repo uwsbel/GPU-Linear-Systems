@@ -39,62 +39,37 @@ set(MKL_LIBRARIES
     ${IOMP5_LIB}
 )
 
-# Expose common/ so utils.h is on the include path for all targets
-include_directories(${CMAKE_SOURCE_DIR}/common)
+set(PROJECT_INCLUDE_DIRS
+    ${CMAKE_SOURCE_DIR}/common
+    ${CMAKE_SOURCE_DIR}/solvers
+)
 
 # Copy data directory to build directory
 file(COPY ${CMAKE_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})
 
+function(add_mkl_driver target_name source_file)
+  add_executable(${target_name} ${source_file})
+  target_include_directories(${target_name} PRIVATE ${PROJECT_INCLUDE_DIRS} ${MKL_INCLUDE_DIR})
+  target_link_libraries(${target_name} PRIVATE ${MKL_LIBRARIES})
+endfunction()
+
+function(add_cudss_driver target_name source_file)
+  set_source_files_properties(${source_file} PROPERTIES LANGUAGE CUDA)
+  add_executable(${target_name} ${source_file})
+  target_include_directories(${target_name} PRIVATE ${PROJECT_INCLUDE_DIRS} ${CUDAToolkit_INCLUDE_DIRS})
+  target_link_libraries(${target_name} PRIVATE cudss)
+  target_compile_definitions(${target_name} PRIVATE
+      CUDA_VERSION_MAJOR=${CMAKE_CUDA_COMPILER_VERSION_MAJOR}
+      CUDA_VERSION_MINOR=${CMAKE_CUDA_COMPILER_VERSION_MINOR}
+  )
+endfunction()
+
 # Add executables
-# --------------------
-# Task Eigen Pardiso
-add_executable(task_eigen_pardiso task_eigen_pardiso.cpp)
-# Configure CPU-based target for Eigen Pardiso
-target_include_directories(task_eigen_pardiso PRIVATE ${MKL_INCLUDE_DIR})
-target_link_libraries(task_eigen_pardiso PRIVATE ${MKL_LIBRARIES})
-target_include_directories(task_eigen_pardiso PRIVATE ${EIGEN3_INCLUDE_DIR})
+add_mkl_driver(run_eigen_pardiso drivers/run_eigen_pardiso.cpp)
+target_include_directories(run_eigen_pardiso PRIVATE ${EIGEN3_INCLUDE_DIR})
 
-# --------------------
-# Task Pardiso
-add_executable(task_pardiso task_pardiso.cpp)
-# Configure CPU-based target for Pardiso
-target_include_directories(task_pardiso PRIVATE ${MKL_INCLUDE_DIR})
-target_link_libraries(task_pardiso PRIVATE ${MKL_LIBRARIES})
-
-# --------------------
-# Task Pardiso Detailed (with separate timing)
-add_executable(task_pardiso_detailed task_pardiso_detailed.cpp)
-# Configure CPU-based target for Pardiso Detailed
-target_include_directories(task_pardiso_detailed PRIVATE ${MKL_INCLUDE_DIR})
-target_link_libraries(task_pardiso_detailed PRIVATE ${MKL_LIBRARIES})
-
-# --------------------
-# Task CuDSS
-set_source_files_properties(task_cudss.cpp PROPERTIES LANGUAGE CUDA)
-
-add_executable(task_cudss task_cudss.cpp)
-# Configure CUDA DSS target
-target_include_directories(task_cudss PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
-target_link_libraries(task_cudss PRIVATE cudss)
-# Add compile definitions for CUDA version to cuDSS target
-target_compile_definitions(task_cudss PRIVATE
-    CUDA_VERSION_MAJOR=${CMAKE_CUDA_COMPILER_VERSION_MAJOR}
-    CUDA_VERSION_MINOR=${CMAKE_CUDA_COMPILER_VERSION_MINOR}
-)
-
-# --------------------
-# Task CuDSS Loop
-set_source_files_properties(task_cudss_loop.cpp PROPERTIES LANGUAGE CUDA)
-
-add_executable(task_cudss_loop task_cudss_loop.cpp)
-# Configure CUDA DSS Loop target
-target_include_directories(task_cudss_loop PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
-target_link_libraries(task_cudss_loop PRIVATE cudss)
-# Add compile definitions for CUDA version to cuDSS Loop target
-target_compile_definitions(task_cudss_loop PRIVATE
-    CUDA_VERSION_MAJOR=${CMAKE_CUDA_COMPILER_VERSION_MAJOR}
-    CUDA_VERSION_MINOR=${CMAKE_CUDA_COMPILER_VERSION_MINOR}
-)
+add_mkl_driver(run_pardiso drivers/run_pardiso.cpp)
+add_cudss_driver(run_cudss drivers/run_cudss.cpp)
 
 
 # Print configuration summary
