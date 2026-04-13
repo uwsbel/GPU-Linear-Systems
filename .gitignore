@@ -3,7 +3,6 @@ build/
 bin/
 out/
 cmake-build-*/
-soln_*dat
 benchmark_results.png
 
 # Plot directories and files
@@ -47,9 +46,10 @@ CMakeFiles/
 cmake_install.cmake
 Makefile
 
-# Generated solution files
+# Generated output
 soln.dat
 *.csv
+/output/
 
 # MKL specific
 *.mod
