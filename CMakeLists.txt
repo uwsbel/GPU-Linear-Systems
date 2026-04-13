@@ -69,21 +69,6 @@ target_include_directories(task_pardiso_detailed PRIVATE ${MKL_INCLUDE_DIR})
 target_link_libraries(task_pardiso_detailed PRIVATE ${MKL_LIBRARIES})
 
 # --------------------
-# Task CuSolver
-add_executable(task_cusolver task_cusolver.cu)
-# Configure CUDA target for CuSolver
-target_include_directories(task_cusolver PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
-target_link_libraries(task_cusolver PRIVATE
-    CUDA::cusolver
-    CUDA::cusparse
-)
-# Add compile definitions for CUDA version
-target_compile_definitions(task_cusolver PRIVATE
-    CUDA_VERSION_MAJOR=${CMAKE_CUDA_COMPILER_VERSION_MAJOR}
-    CUDA_VERSION_MINOR=${CMAKE_CUDA_COMPILER_VERSION_MINOR}
-)
-
-# --------------------
 # Task CuDSS
 set_source_files_properties(task_cudss.cpp PROPERTIES LANGUAGE CUDA)
 
