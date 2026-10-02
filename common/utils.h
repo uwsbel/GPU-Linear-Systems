@@ -98,7 +98,7 @@ inline bool tryParsePositiveInt(const std::string &value, int &parsed_value)
     return parsed_value > 0;
 }
 
-static const std::array<int, 6> kSupportedMultiRigCounts = {1, 2, 4, 8, 10, 25};
+static const std::array<int, 7> kSupportedMultiRigCounts = {1, 2, 4, 8, 10, 25, 50};
 
 // Dataset and path helpers
 inline bool isSupportedMultiRigCount(int num_rigs)
@@ -161,6 +161,54 @@ inline ProblemFiles getMultiRigCaseFiles(int num_rigs, const std::string &solver
         base_dir + "/" + base_name + "Dl.dat",
         output,
     };
+}
+
+inline ProblemFiles getRefineCaseFiles(int num_spokes, const std::string &solver_name, Precision precision)
+{
+    // Single-tire mesh-refinement cases (genuinely coupled, unlike the replicated multi-rig set).
+    const std::string base_dir = "data/ancf/refine1/" + std::to_string(num_spokes);
+    const std::string base_name = "solve_2002_0_";
+    const std::string output =
+        "output/soln_" + solver_name + "_" + precisionToString(precision) + "_" + std::to_string(num_spokes) +
+        "_spokes.dat";
+
+    return {
+        base_dir + "/" + base_name + "Z.dat",
+        base_dir + "/" + base_name + "rhs.dat",
+        base_dir + "/" + base_name + "Dv.dat",
+        base_dir + "/" + base_name + "Dl.dat",
+        output,
+    };
+}
+
+inline bool isSupportedRefineCount(int num_spokes)
+{
+    return num_spokes == 16 || num_spokes == 80;
+}
+
+inline ProblemFiles getShellCaseFiles(int grid, const std::string &solver_name, Precision precision)
+{
+    // ANCF 3443 shell panel, grid x grid elements, edge clamped by constraints (saddle-point form).
+    // Exported from jz_FEA_3443_check --grid <grid> at step 3, first Newton iteration.
+    const std::string base_dir = "data/ancf/shell/" + std::to_string(grid);
+    const std::string base_name = "solve_4_0_";
+    const std::string output =
+        "output/soln_" + solver_name + "_" + precisionToString(precision) + "_shell_" + std::to_string(grid) + ".dat";
+
+    return {
+        base_dir + "/" + base_name + "Z.dat",
+        base_dir + "/" + base_name + "rhs.dat",
+        base_dir + "/" + base_name + "Dv.dat",
+        base_dir + "/" + base_name + "Dl.dat",
+        output,
+    };
+}
+
+static const std::array<int, 9> kSupportedShellGrids = {10, 20, 30, 40, 50, 70, 100, 140, 200};
+
+inline bool isSupportedShellGrid(int grid)
+{
+    return std::find(kSupportedShellGrids.begin(), kSupportedShellGrids.end(), grid) != kSupportedShellGrids.end();
 }
 
 // Logging helpers

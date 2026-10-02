@@ -19,7 +19,7 @@ set(CMAKE_CUDA_EXTENSIONS OFF)
 set(CMAKE_CUDA_ARCHITECTURES 86)
 
 # Find required packages
-find_package(cudss 0.7.1 REQUIRED)
+find_package(cudss 0.8.0 REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(Eigen3 REQUIRED)
 

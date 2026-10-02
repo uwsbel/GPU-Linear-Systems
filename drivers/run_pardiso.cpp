@@ -23,6 +23,8 @@ struct DriverArgs
     int num_threads = 1;
     Precision precision = Precision::Float64;
     int num_rigs = 4;
+    bool refine = false;  // interpret --rigs as a spoke count from the refine1 set
+    bool shell = false;   // interpret --rigs as the grid size of the ANCF shell set
 };
 
 void printUsage(const char *program_name)
@@ -39,7 +41,20 @@ bool isHelpRequest(int argc, char *argv[])
 
 bool parseArgs(int argc, char *argv[], DriverArgs &args)
 {
-    if (argc != 7 || std::string(argv[1]) != "--threads" || std::string(argv[3]) != "--precision" ||
+    // Optional trailing --refine flag selects the single-tire mesh-refinement cases.
+    int effective_argc = argc;
+    if (effective_argc > 1 && std::string(argv[effective_argc - 1]) == "--refine")
+    {
+        args.refine = true;
+        --effective_argc;
+    }
+    else if (effective_argc > 1 && std::string(argv[effective_argc - 1]) == "--shell")
+    {
+        args.shell = true;
+        --effective_argc;
+    }
+
+    if (effective_argc != 7 || std::string(argv[1]) != "--threads" || std::string(argv[3]) != "--precision" ||
         std::string(argv[5]) != "--rigs")
     {
         return false;
@@ -85,14 +100,20 @@ int main(int argc, char *argv[])
             return 1;
         }
 
-        if (!isSupportedMultiRigCount(args.num_rigs))
+        const bool supported = args.shell    ? isSupportedShellGrid(args.num_rigs)
+                                : args.refine ? isSupportedRefineCount(args.num_rigs)
+                                              : isSupportedMultiRigCount(args.num_rigs);
+        if (!supported)
         {
-            std::cerr << "Error: Unsupported num_rigs value: " << args.num_rigs << ". Supported values are "
-                      << supportedMultiRigValues() << "." << std::endl;
+            std::cerr << "Error: Unsupported value: " << args.num_rigs << ". Supported values are "
+                      << (args.shell ? "10, 20, 30, 40, 50, 70, 100, 140, 200" : args.refine ? "16, 80" : supportedMultiRigValues()) << "."
+                      << std::endl;
             return 1;
         }
 
-        const ProblemFiles files = getMultiRigCaseFiles(args.num_rigs, "pardiso", args.precision);
+        const ProblemFiles files = args.shell    ? getShellCaseFiles(args.num_rigs, "pardiso", args.precision)
+                                   : args.refine ? getRefineCaseFiles(args.num_rigs, "pardiso", args.precision)
+                                                 : getMultiRigCaseFiles(args.num_rigs, "pardiso", args.precision);
         const PardisoRunOptions options{args.num_threads, args.num_rigs, "output/logs/pardiso_timing.csv"};
 
         if (args.precision == Precision::Float32)

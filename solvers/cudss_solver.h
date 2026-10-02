@@ -104,7 +104,7 @@ template <typename T>
 int runCudss(const ProblemFiles &files, const CudssRunOptions &options)
 {
     cudssStatus_t status = CUDSS_STATUS_SUCCESS;
-    const cudaDataType_t cuda_data_type = std::is_same<T, double>::value ? CUDA_R_64F : CUDA_R_32F;
+    const cudssDataType_t cuda_data_type = std::is_same<T, double>::value ? CUDSS_R_64F : CUDSS_R_32F;
     const Precision precision = std::is_same<T, double>::value ? Precision::Float64 : Precision::Float32;
 
     int *csr_offsets_d = nullptr;
@@ -251,11 +251,11 @@ int runCudss(const ProblemFiles &files, const CudssRunOptions &options)
     CHECK_CUDSS(cudssConfigCreate(&solver_config), "cudssConfigCreate");
     CHECK_CUDSS(cudssDataCreate(handle, &solver_data), "cudssDataCreate");
 
-    cudssAlgType_t reordering_alg = CUDSS_ALG_DEFAULT;
+    cudssReorderingAlg_t reordering_alg = CUDSS_REORDERING_ALG_DEFAULT;
     CHECK_CUDSS(cudssConfigSet(solver_config, CUDSS_CONFIG_REORDERING_ALG, &reordering_alg, sizeof(reordering_alg)),
                 "cudssConfigSet for CUDSS_CONFIG_REORDERING_ALG");
 
-    cudssAlgType_t pivot_epsilon_alg = CUDSS_ALG_DEFAULT;
+    cudssPivotEpsilonAlg_t pivot_epsilon_alg = CUDSS_PIVOT_EPSILON_ALG_DEFAULT;
     CHECK_CUDSS(
         cudssConfigSet(solver_config, CUDSS_CONFIG_PIVOT_EPSILON_ALG, &pivot_epsilon_alg, sizeof(pivot_epsilon_alg)),
         "cudssConfigSet for CUDSS_CONFIG_PIVOT_EPSILON_ALG");
@@ -273,7 +273,7 @@ int runCudss(const ProblemFiles &files, const CudssRunOptions &options)
     CHECK_CUDSS(cudssConfigSet(solver_config, CUDSS_CONFIG_IR_N_STEPS, &iter_refinement, sizeof(iter_refinement)),
                 "cudssConfigSet for CUDSS_CONFIG_IR_N_STEPS");
 
-    cudssPivotType_t pivot_type = CUDSS_PIVOT_COL;
+    cudssPivotType_t pivot_type = CUDSS_PIVOT_AUTO;
     CHECK_CUDSS(cudssConfigSet(solver_config, CUDSS_CONFIG_PIVOT_TYPE, &pivot_type, sizeof(pivot_type)),
                 "cudssConfigSet for CUDSS_CONFIG_PIVOT_TYPE");
 
@@ -282,8 +282,9 @@ int runCudss(const ProblemFiles &files, const CudssRunOptions &options)
                 "cudssConfigSet for CUDSS_CONFIG_PIVOT_THRESHOLD");
 
     int hybrid_mode = 0;
-    CHECK_CUDSS(cudssConfigSet(solver_config, CUDSS_CONFIG_HYBRID_MODE, &hybrid_mode, sizeof(hybrid_mode)),
-                "cudssConfigSet for CUDSS_CONFIG_HYBRID_MODE");
+    CHECK_CUDSS(
+        cudssConfigSet(solver_config, CUDSS_CONFIG_HYBRID_MEMORY_MODE, &hybrid_mode, sizeof(hybrid_mode)),
+        "cudssConfigSet for CUDSS_CONFIG_HYBRID_MEMORY_MODE");
 
     int hybrid_execute_mode = 0;
     CHECK_CUDSS(cudssConfigSet(
@@ -312,7 +313,8 @@ int runCudss(const ProblemFiles &files, const CudssRunOptions &options)
                                      nullptr,
                                      csr_columns_d,
                                      csr_values_d,
-                                     CUDA_R_32I,
+                                     CUDSS_R_32I,
+                                     CUDSS_R_32I,
                                      cuda_data_type,
                                      matrix_type,
                                      matrix_view,
