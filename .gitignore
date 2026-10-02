@@ -67,3 +67,11 @@ CLAUDE.md
 
 # Large benchmark data (provisioned locally; see data/README.md)
 data/ancf/multi_rig/
+
+# ANCF shell-panel matrices (4.9 GB, regenerate with sweep_logs/shell/export_all.sh)
+data/ancf/shell/
+
+# Sweep logs and aggregated tables (kept locally)
+sweep_logs/**/*.log
+sweep_logs/**/*.csv
+sweep_logs/**/table.txt
